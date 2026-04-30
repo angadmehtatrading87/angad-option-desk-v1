@@ -45,6 +45,14 @@ def build_deployment_doctrine(
         notes.append("Regime quality weak; keep deployment light.")
         target *= 0.7
 
+    if quality_score >= 70 and current_deployment_pct < target:
+        notes.append("High-quality regime with underdeployment; allow controlled expansion.")
+        floor = max(floor, target * 0.7)
+
+    if quality_score < 45:
+        ceiling = min(ceiling, target + 8.0)
+        notes.append("Weak quality; tighten deployment ceiling.")
+
     should_expand = current_deployment_pct < floor
     should_defend = current_deployment_pct > ceiling
 

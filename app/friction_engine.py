@@ -26,6 +26,12 @@ def evaluate_trade_economics(
     expected_edge = notional_usd * (expected_move_bps / 10000.0)
     friction = notional_usd * (spread_bps / 10000.0) + admin_fee_usd + financing_usd
     net_edge = expected_edge - friction
-    tradable = net_edge >= min_net_edge_usd
-    notes = [f"notional={notional_usd:.2f}", f"expected_edge={expected_edge:.2f}", f"friction={friction:.2f}"]
+    edge_to_friction = (expected_edge / friction) if friction > 0 else 0.0
+    tradable = net_edge >= min_net_edge_usd and edge_to_friction >= 1.35
+    notes = [
+        f"notional={notional_usd:.2f}",
+        f"expected_edge={expected_edge:.2f}",
+        f"friction={friction:.2f}",
+        f"edge_to_friction={edge_to_friction:.2f}",
+    ]
     return FrictionDecision(round(expected_edge, 2), round(friction, 2), round(net_edge, 2), tradable, notes)
