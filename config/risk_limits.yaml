@@ -1,0 +1,22 @@
+account_mode: simulation
+base_capital_usd: 1000
+approval_required: true
+auto_trade_enabled: false
+max_risk_per_trade_usd: 50
+max_daily_loss_usd: 50
+max_weekly_loss_usd: 100
+max_open_trades: 1
+allowed_trade_types:
+- debit_spread
+- put_credit_spread
+- call_credit_spread
+blocked_trade_types:
+- naked_call
+- naked_put
+- short_straddle
+- short_strangle
+- zero_dte
+- martingale
+min_days_to_expiry: 21
+max_days_to_expiry: 45
+kill_switch: false

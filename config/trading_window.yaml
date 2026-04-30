@@ -1,0 +1,31 @@
+timezone: Asia/Dubai
+
+morning_macro_window:
+  enabled: true
+  start_hour: 8
+  start_minute: 0
+  end_hour: 12
+  end_minute: 0
+
+us_options_window_dubai:
+  enabled: true
+  start_hour: 17
+  start_minute: 30
+  end_hour: 19
+  end_minute: 30
+
+position_monitor_window_dubai:
+  enabled: true
+  start_hour: 17
+  start_minute: 30
+  end_hour: 23
+  end_minute: 45
+
+rules:
+  allow_new_option_trades_only_in_us_window: true
+  max_new_trades_per_day: 1
+  max_open_trades: 1
+  stale_price_tolerance_percent: 12
+  max_seconds_after_approval: 180
+  limit_order_only: true
+  cancel_if_not_filled_seconds: 120

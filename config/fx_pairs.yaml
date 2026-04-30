@@ -1,0 +1,16 @@
+fx_pairs:
+  USDJPY:
+    yahoo_symbol: "USDJPY=X"
+    description: "US Dollar / Japanese Yen"
+  USDCHF:
+    yahoo_symbol: "USDCHF=X"
+    description: "US Dollar / Swiss Franc"
+
+training:
+  period: "24mo"
+  interval: "1d"
+
+regime_thresholds:
+  strong_trend_return_20d: 0.02
+  high_volatility_20d: 0.012
+  extreme_volatility_20d: 0.02

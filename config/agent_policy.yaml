@@ -1,0 +1,33 @@
+capital:
+  base_capital: 10000000
+  daily_target_return_pct: 1.0
+  stretch_target_return_pct: 2.0
+  no_compounding: true
+  withdrawal_pool_enabled: true
+
+risk:
+  max_daily_loss_pct: 1.5
+  max_deployed_capital_pct: 70
+  min_idle_liquidity_pct: 30
+  max_concurrent_trades: 999
+  max_same_symbol_open_trades: 1
+  max_same_thesis_open_trades: 1
+  min_risk_per_trade_usd: 50000
+  max_risk_per_trade_usd: 100000
+  hard_stop_after_daily_loss: true
+
+execution:
+  autonomous_entries: true
+  autonomous_exits: true
+  owner_approval_required: false
+  max_new_entries_per_session: 999
+
+communications:
+  telegram_trade_alerts_enabled: false
+  telegram_owner_briefing_only: true
+  pre_session_report_time_dxb: "17:15"
+  post_session_report_time_dxb: "00:05"
+
+regime:
+  allow_trade_in_event_risk: false
+  allow_trade_in_no_trade_regime: false

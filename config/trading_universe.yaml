@@ -1,0 +1,17 @@
+symbols:
+  - SPY
+  - QQQ
+  - IWM
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - META
+  - TSLA
+  - AMD
+  - NFLX
+  - GOOGL
+
+rules:
+  max_candidates_per_cycle: 2
+  max_same_symbol_pending: 1

@@ -1,0 +1,16 @@
+{
+  "base_url": "https://demo-api.ig.com/gateway/deal",
+  "api_key": "6eee058d71d2abb55436566f81c84c559a5bd66a",
+  "identifier": "angaddemo",
+  "password": "Shaelmania@0906",
+  "account_id": "Z6ARE0",
+  "default_size_mode": "small",
+  "enabled": true,
+  "watchlist": [
+    "CS.D.USDCHF.DBM.IP",
+    "CS.D.USDCAD.DBM.IP",
+    "CS.D.EURUSD.DBM.IP",
+    "CS.D.GBPUSD.DBM.IP",
+    "CS.D.USDJPY.DBM.IP"
+  ]
+}

@@ -1,0 +1,33 @@
+scanner_enabled: true
+
+symbols:
+  - SPY
+  - QQQ
+  - AAPL
+  - MSFT
+  - NVDA
+  - TSLA
+
+allowed_setups:
+  - bullish_debit_spread
+  - bearish_debit_spread
+  - put_credit_spread
+
+market_regime_rules:
+  bullish:
+    min_trend_score: 65
+    max_volatility_score: 75
+  bearish:
+    max_trend_score: 35
+    max_volatility_score: 80
+  neutral:
+    min_trend_score: 40
+    max_trend_score: 60
+
+proposal_limits:
+  max_proposals_per_scan: 3
+  min_confidence_score: 60
+
+duplicate_protection:
+  enabled: true
+  cooldown_minutes: 180

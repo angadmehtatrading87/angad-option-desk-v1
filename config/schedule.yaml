@@ -1,0 +1,15 @@
+scheduled_scanner_enabled: true
+
+scan_interval_minutes: 30
+
+market_hours_utc:
+  start_hour: 13
+  start_minute: 30
+  end_hour: 21
+  end_minute: 0
+
+weekdays_only: true
+
+duplicate_protection:
+  enabled: true
+  cooldown_minutes: 180

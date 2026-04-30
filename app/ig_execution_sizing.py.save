@@ -1,0 +1,187 @@
+from app.ig_asia_open_playbook import evaluate_asia_open_playbook
+from app.ig_session_intelligence import get_ig_session_state
+from app.ig_regime_intelligence import classify_market_regime, get_entry_expression
+from app.ig_api_governor import get_ig_cached_snapshot
+from app.ig_adaptive_behavior_engine import build_adaptive_behavior_context
+from app.ig_portfolio_intelligence import build_portfolio_intelligence
+from app.ig_execution_quality_engine import build_execution_quality
+from app.ig_market_perception_engine import build_market_perception
+
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+
+def _safe_int(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def get_execution_sizing_plan(now=None):
+    session_state = get_ig_session_state(now=now)
+    snap = get_ig_cached_snapshot()
+    rows = ((snap.get("positions") or {}).get("positions") or [])
+
+    regime = classify_market_regime(rows, session_state=session_state)
+    expr = get_entry_expression(regime, session_state=session_state)
+    asia = evaluate_asia_open_playbook(now=now, session_state=session_state)
+
+    effective_session = session_state.get("session")
+    effective_regime = regime.get("regime")
+    effective_style = expr.get("entry_style")
+
+    adaptive = build_adaptive_behavior_context(
+        session=effective_session,
+        regime=effective_regime,
+        entry_style=effective_style,
+    )
+    portfolio = build_portfolio_intelligence()
+    execution_quality = build_execution_quality()
+    perception = build_market_perception()
+
+    entry_allowed = True
+    block_reasons = []
+    size_multiplier = _safe_float(expr.get("size_multiplier"), 1.0)
+    deployment_mode = "normal"
+
+    if not session_state.get("market_open"):
+        entry_allowed = False
+        block_reasons.append("market_not_open")
+
+    if expr.get("entry_style") == "blocked":
+        entry_allowed = False
+        block_reasons.append("entry_expression_blocked")
+
+    if asia.get("action_bias") == "standby" and session_state.get("session") in (
+        "sunday_reopen_probe",
+        "asia",
+        "asia_friday",
+    ):
+        deployment_mode = "probe"
+        size_multiplier = min(size_multiplier or 1.0, 0.35)
+
+    session_name = ((session_state or {}).get("session") or "").lower()
+
+    if session_name in ("asia", "pre_asia", "sunday_asia"):
+        pass
+
+    if asia.get("probe_allowed"):
+        deployment_mode = "probe"
+        size_multiplier = min(
+            size_multiplier or 1.0,
+            float(asia.get("size_multiplier", 0.25) or 0.25)
+        )
+    if asia.get("scale_allowed"):
+        deployment_mode = "scale"
+        size_multiplier = min(
+            1.0,
+            max(size_multiplier, _safe_float(asia.get("size_multiplier"), 0.75)),
+        )
+
+    if _safe_float(regime.get("conviction_score"), 0.0) < 15:
+        entry_allowed = False
+        size_multiplier = 0.0
+        block_reasons.append("regime_conviction_too_low")
+
+    if adaptive.get("should_block"):
+        entry_allowed = False
+        size_multiplier = 0.0
+        block_reasons.append("adaptive_context_blocked")
+
+    controls_headroom = 100.0
+    try:
+        from app.ig_execution_engine import _capital_scaled_controls, load_ig_policy
+        controls_headroom = float((_capital_scaled_controls(load_ig_policy()) or {}).get("headroom_pct") or 0.0)
+    except Exception:
+        controls_headroom = 0.0
+
+    if portfolio.get("should_block_new"):
+        if controls_headroom >= 70.0:
+            deployment_mode = "probe"
+            size_multiplier = min(size_multiplier or 1.0, 0.35)
+        else:
+            entry_allowed = False
+            size_multiplier = 0.0
+            block_reasons.append("portfolio_block_new")
+
+    if execution_quality.get("should_block"):
+        entry_allowed = False
+        size_multiplier = 0.0
+        block_reasons.append("execution_quality_blocked")
+
+    if execution_quality.get("should_delay"):
+        block_reasons.append("execution_quality_delay")
+
+    if perception.get("should_block"):
+        entry_allowed = False
+        size_multiplier = 0.0
+        block_reasons.append("market_perception_blocked")
+
+    size_multiplier = round(
+        size_multiplier * _safe_float(adaptive.get("size_adjustment"), 1.0), 2
+    )
+    size_multiplier = round(
+        size_multiplier * _safe_float(portfolio.get("size_adjustment"), 1.0), 2
+    )
+    size_multiplier = round(
+        size_multiplier * _safe_float(execution_quality.get("size_adjustment"), 1.0), 2
+    )
+    size_multiplier = round(
+        size_multiplier * _safe_float(perception.get("size_adjustment"), 1.0), 2
+    )
+
+    if size_multiplier < 0:
+        size_multiplier = 0.0
+
+    return {
+        "entry_allowed": entry_allowed,
+        "deployment_mode": deployment_mode,
+        "size_multiplier": round(size_multiplier, 2),
+        "block_reasons": sorted(set(block_reasons)),
+        "session_state": session_state,
+        "regime_state": regime,
+        "entry_expression": expr,
+        "asia_playbook": asia,
+        "adaptive_behavior": adaptive,
+        "portfolio_intelligence": portfolio,
+        "execution_quality": execution_quality,
+        "market_perception": perception,
+    }
+
+
+def scale_order_size(base_size, sizing_plan):
+    base = _safe_float(base_size, 0.0)
+    mult = _safe_float((sizing_plan or {}).get("size_multiplier"), 1.0)
+    if base <= 0 or mult <= 0:
+        return 0.0
+
+    scaled = round(base * mult, 4)
+
+    if 0 < scaled < 1.0:
+        scaled = 1.0
+
+    return scaled
+def scale_order_size(size, sizing_plan=None):
+    try:
+        base_size = float(size or 0.0)
+    except Exception:
+        base_size = 0.0
+
+    plan = sizing_plan or {}
+    try:
+        mult = float(plan.get("size_multiplier", 1.0) or 0.0)
+    except Exception:
+        mult = 1.0
+
+    scaled = round(base_size * mult, 4)
+
+    min_size = 0.1
+    if scaled > 0 and scaled < min_size:
+        scaled = min_size
+
+    return scaled

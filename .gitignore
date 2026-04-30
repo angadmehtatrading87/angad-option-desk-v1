@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+data/
+logs/
+backups/
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.csv
+*.zip

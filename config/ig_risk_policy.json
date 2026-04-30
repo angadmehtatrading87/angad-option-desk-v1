@@ -1,0 +1,49 @@
+{
+  "enabled": true,
+  "demo_only": true,
+  "auto_execute": true,
+  "max_concurrent_positions": 12,
+  "per_trade_risk_usd": 100,
+  "min_confidence": 60,
+  "default_stop_distance_points": {
+    "CS.D.USDCHF.DBM.IP": 40,
+    "CS.D.USDCAD.DBM.IP": 45,
+    "CS.D.EURUSD.DBM.IP": 35,
+    "CS.D.GBPUSD.DBM.IP": 40,
+    "CS.D.USDJPY.DBM.IP": 40
+  },
+  "default_limit_distance_points": {
+    "CS.D.USDCHF.DBM.IP": 60,
+    "CS.D.USDCAD.DBM.IP": 70,
+    "CS.D.EURUSD.DBM.IP": 50,
+    "CS.D.GBPUSD.DBM.IP": 60,
+    "CS.D.USDJPY.DBM.IP": 60
+  },
+  "fixed_size_by_epic": {
+    "CS.D.USDCHF.DBM.IP": 2.0,
+    "CS.D.USDCAD.DBM.IP": 6.0,
+    "CS.D.EURUSD.DBM.IP": 2.0,
+    "CS.D.GBPUSD.DBM.IP": 2.0,
+    "CS.D.USDJPY.DBM.IP": 2.0
+  },
+  "telegram_trade_alerts": false,
+  "telegram_summary_only": true,
+  "telegram_summary_interval_hours": 8,
+  "max_positions_per_epic": 3,
+  "allow_pyramiding": true,
+  "pyramid_only_if_profitable": true,
+  "pyramid_min_signal_confidence": 68,
+  "combined_max_capital_usage_pct": 80.0,
+  "capital_scaling_base": 1000000.0,
+  "capital_scaling_open_cap": 12.0,
+  "capital_scaling_size_cap": 8.0,
+  "capital_scaling_per_epic_cap": 15,
+  "deployment_component_cap": 4.5,
+  "deployment_force_scale_gap_pct": 10.0,
+  "deployment_force_scale_min_confidence": 75.0,
+  "target_deployment_pct_asia": 20.0,
+  "target_deployment_pct_london": 35.0,
+  "target_deployment_pct_us": 45.0,
+  "target_deployment_pct_late_us": 30.0,
+  "target_deployment_pct_default": 25.0
+}
