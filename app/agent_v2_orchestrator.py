@@ -10,6 +10,8 @@ from app.opportunity_ranking_engine import rank_opportunity
 from app.friction_engine import evaluate_trade_economics
 from app.loss_state_governor import govern_after_losses
 from app.explainability_engine import build_trade_explanation
+from app.signal_persistence_engine import SignalPersistenceTracker
+from app.ig_trade_store import recent_ig_trade_log
 
 
 PAIR_EDGE_DEFAULTS = {
@@ -19,6 +21,8 @@ PAIR_EDGE_DEFAULTS = {
     "GBPUSD": {"expectancy": 6.0, "win_rate": 46.0, "avg_hold_minutes": 85.0, "preferred_sessions": ["london", "us"]},
     "USDJPY": {"expectancy": 7.0, "win_rate": 47.0, "avg_hold_minutes": 95.0, "preferred_sessions": ["asia", "london", "us"]},
 }
+
+_PERSISTENCE_TRACKER = SignalPersistenceTracker(maxlen=24, min_aligned_cycles=3)
 
 
 def _extract_symbol(epic: str) -> str:
@@ -184,6 +188,42 @@ def _portfolio_fit_score(symbol: str, positions: list[dict]) -> float:
     return max(20.0, min(100.0, fit))
 
 
+def _trade_log_edge_memory(limit: int = 300) -> dict[str, dict]:
+    memory: dict[str, dict] = {}
+    try:
+        rows = recent_ig_trade_log(limit=limit) or []
+    except Exception:
+        return memory
+
+    for row in rows:
+        epic = str(row.get("epic") or "")
+        symbol = _extract_symbol(epic)
+        if not symbol:
+            continue
+        bucket = memory.setdefault(symbol, {"n": 0, "wins": 0, "conf_sum": 0.0, "notes": []})
+        bucket["n"] += 1
+        conf = _safe_float(row.get("confidence"), 0.0)
+        bucket["conf_sum"] += conf
+        status = str(row.get("status") or "").upper()
+        if status in ("CONFIRMED_IN_BOOK", "ACCEPTED_NOT_VISIBLE_IN_BOOK"):
+            bucket["wins"] += 1
+
+    for symbol, bucket in memory.items():
+        n = max(int(bucket.get("n", 0)), 1)
+        wins = int(bucket.get("wins", 0))
+        win_rate = (wins / n) * 100.0
+        avg_conf = _safe_float(bucket.get("conf_sum")) / n
+        expectancy_adj = ((win_rate - 50.0) * 0.35) + ((avg_conf - 65.0) * 0.15)
+        size_weight = max(0.5, min(1.6, 1.0 + (expectancy_adj / 100.0)))
+        bucket["win_rate"] = round(win_rate, 2)
+        bucket["avg_confidence"] = round(avg_conf, 2)
+        bucket["expectancy_adj"] = round(expectancy_adj, 2)
+        bucket["size_weight"] = round(size_weight, 2)
+        bucket["sample_size"] = n
+
+    return memory
+
+
 def build_agent_v2_plan():
     snap = get_ig_cached_snapshot(force_refresh=False) or {}
     account = snap.get("account") or {}
@@ -235,6 +275,7 @@ def build_agent_v2_plan():
     ).to_dict()
 
     pair_edges = {}
+    edge_memory = _trade_log_edge_memory(limit=300)
     ranked = []
     explanations = {}
     economic_candidates = []
@@ -251,6 +292,9 @@ def build_agent_v2_plan():
             continue
 
         direction = "BUY" if bias == "LONG" else "SELL"
+        persistence_state = _PERSISTENCE_TRACKER.update(symbol=symbol, direction=direction, aligned=True).to_dict()
+        if not persistence_state.get("tradable"):
+            continue
 
         defaults = PAIR_EDGE_DEFAULTS.get(symbol, {
             "expectancy": 5.0,
@@ -266,6 +310,13 @@ def build_agent_v2_plan():
             avg_hold_minutes=defaults["avg_hold_minutes"],
             preferred_sessions=defaults["preferred_sessions"],
         ).to_dict()
+        mem = edge_memory.get(symbol) or {}
+        mem_size_weight = _safe_float(mem.get("size_weight"), 1.0)
+        pep["size_weight"] = round(_safe_float(pep.get("size_weight"), 1.0) * mem_size_weight, 2)
+        if mem:
+            pep.setdefault("notes", []).append(
+                f"edge_memory sample={int(mem.get('sample_size', 0))} win_rate={_safe_float(mem.get('win_rate')):.1f}%"
+            )
         pair_edges[symbol] = pep
 
         if not pep.get("enabled", True):
@@ -286,7 +337,10 @@ def build_agent_v2_plan():
             symbol=symbol,
             direction=direction,
             structure_strength=structure_strength,
-            persistence_score=persistence_score / _safe_float(loss_governor.get("evidence_multiplier", 1.0), 1.0),
+            persistence_score=min(
+                100.0,
+                _safe_float(persistence_state.get("persistence_score")) / _safe_float(loss_governor.get("evidence_multiplier", 1.0), 1.0),
+            ),
             regime_quality=_safe_float(regime.get("quality_score")),
             friction_penalty=spread_bps,
             pair_size_weight=pair_weight,
@@ -302,11 +356,11 @@ def build_agent_v2_plan():
 
         econ = evaluate_trade_economics(
             notional_usd=target_notional,
-            expected_move_bps=max(12.0, structure_strength / 4.0),
+            expected_move_bps=max(14.0, structure_strength / 3.5),
             spread_bps=max(spread_bps, 1.0),
             admin_fee_usd=0.0,
-            financing_usd=0.0,
-            min_net_edge_usd=75.0,
+            financing_usd=max(2.0, target_notional * 0.00003),
+            min_net_edge_usd=max(90.0, target_notional * 0.0012),
         ).to_dict()
 
         if not econ.get("tradable", False):
@@ -323,6 +377,7 @@ def build_agent_v2_plan():
             "score": _safe_float(score_obj.get("total_score")),
             "structure": structure,
             "pair_edge": pep,
+            "persistence": persistence_state,
             "economics": econ,
         }
 
@@ -354,6 +409,7 @@ def build_agent_v2_plan():
         "book_directive": book_directive,
         "structures": structures,
         "pair_edges": pair_edges,
+        "edge_memory": edge_memory,
         "ranked": ranked,
         "candidates": final_candidates,
     }

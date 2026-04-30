@@ -142,6 +142,9 @@ def get_execution_sizing_plan(now=None):
     if size_multiplier < 0:
         size_multiplier = 0.0
 
+    if deployment_mode in ("v2_expand_probe", "scale") and entry_allowed and len(v2_candidates) > 0:
+        size_multiplier = max(size_multiplier, 0.35)
+
     return {
         "entry_allowed": entry_allowed,
         "deployment_mode": deployment_mode,
@@ -158,18 +161,6 @@ def get_execution_sizing_plan(now=None):
     }
 
 
-def scale_order_size(base_size, sizing_plan):
-    base = _safe_float(base_size, 0.0)
-    mult = _safe_float((sizing_plan or {}).get("size_multiplier"), 1.0)
-    if base <= 0 or mult <= 0:
-        return 0.0
-
-    scaled = round(base * mult, 4)
-
-    if 0 < scaled < 1.0:
-        scaled = 1.0
-
-    return scaled
 def scale_order_size(size, sizing_plan=None):
     try:
         base_size = float(size or 0.0)
@@ -181,6 +172,10 @@ def scale_order_size(size, sizing_plan=None):
         mult = float(plan.get("size_multiplier", 1.0) or 0.0)
     except Exception:
         mult = 1.0
+
+    mode = str((plan or {}).get("deployment_mode") or "").lower()
+    if mode in ("v2_expand_probe", "expand") and mult > 0:
+        mult = max(mult, 0.35)
 
     scaled = round(base_size * mult, 4)
 

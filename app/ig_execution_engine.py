@@ -377,6 +377,7 @@ def _build_v2_decisions():
         }
 
     candidates = plan.get("candidates", []) or []
+    deployment_mode = str((plan.get("deployment") or {}).get("mode") or "").upper()
     decisions = []
     skips = []
 
@@ -397,7 +398,7 @@ def _build_v2_decisions():
             "v2_economics": c.get("economics"),
             "v2_explanation": c.get("explanation"),
             "regime": (plan.get("regime") or {}).get("regime"),
-            "deployment_mode": (plan.get("deployment") or {}).get("mode"),
+            "deployment_mode": deployment_mode,
         })
 
     return {
@@ -406,6 +407,7 @@ def _build_v2_decisions():
         "decisions": decisions,
         "skips": skips,
         "plan": plan,
+        "deployment_mode": deployment_mode,
     }
 
 
@@ -421,7 +423,7 @@ def eligible_decisions(ig=None, login=None):
         return {"ok": False, "reason": ["ig_snapshot_failed"], "decisions": [], "skips": []}
 
     v2 = _build_v2_decisions()
-    if v2.get("ok") and v2.get("decisions"):
+    if v2.get("ok"):
         decisions = v2.get("decisions", [])
         v2_skips = v2.get("skips", [])
     else:
@@ -441,6 +443,7 @@ def eligible_decisions(ig=None, login=None):
                 "action": sig.get("action", "NO_TRADE"),
                 "reason": sig.get("reason", ""),
                 "confidence": float(sig.get("confidence", 0) or 0),
+                "deployment_mode": "LEGACY_FALLBACK",
             })
 
     if ig is None:
