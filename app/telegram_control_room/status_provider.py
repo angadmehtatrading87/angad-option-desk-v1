@@ -8,15 +8,36 @@ from pathlib import Path
 RUNTIME_STATE = Path("data/agent_runtime_state.json")
 TRADES_DB = Path("data/trades.db")
 REPORTS_DIR = Path("reports")
+SYSTEMD_UNITS = {
+    "ig_execution_worker": "ig-execution-worker.service",
+    "telegram_control_room": "telegram-control-room.service",
+    "agent_ops_weekly_report": "agent-ops-weekly-report.timer",
+    "agent_ops_weekend_approval": "agent-ops-weekend-approval.timer",
+    "research_daily": "research-daily.timer",
+    "research_weekly": "research-weekly.timer",
+}
 
 
 def _safe_json(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _service_status(unit: str) -> str:
+    try:
+        out = subprocess.check_output(["systemctl", "is-active", unit], text=True).strip()
+        return out or "unknown"
+    except Exception:
+        return "unavailable"
+
+
+def _systemd_statuses() -> dict:
+    return {k: _service_status(v) for k, v in SYSTEMD_UNITS.items()}
 
 
 def _git(cmd: list[str]) -> str:
@@ -45,21 +66,36 @@ def _table_exists(name: str) -> bool:
 
 
 def get_status() -> dict:
+    state_missing = not RUNTIME_STATE.exists()
     rt = _safe_json(RUNTIME_STATE)
+    if state_missing:
+        rt = {
+            "state": "state_file_missing",
+            "execution_mode": "shadow",
+            "kill_switch": False,
+            "worker_status": "state_file_missing",
+        }
+    systemd = _systemd_statuses()
     return {
         "server_alive": True,
         "git_branch": _git(["rev-parse", "--abbrev-ref", "HEAD"]),
         "git_commit": _git(["rev-parse", "--short", "HEAD"]),
-        "worker": rt.get("worker_status", "unknown"),
+        "worker": rt.get("worker_status", "state_file_missing" if state_missing else "unavailable"),
         "execution_mode": rt.get("execution_mode", "unknown"),
         "kill_switch": rt.get("kill_switch", False),
-        "ig_worker": rt.get("ig_execution_worker_status", "unknown"),
-        "market_brain": rt.get("market_brain_status", "unknown"),
-        "research": rt.get("research_intelligence_status", "unknown"),
-        "agent_ops": rt.get("agent_ops_status", "unknown"),
-        "last_scan": rt.get("last_scan_time"),
+        "state": rt.get("state", "ok"),
+        "ig_worker": systemd.get("ig_execution_worker", "unavailable"),
+        "telegram_control_room": systemd.get("telegram_control_room", "unavailable"),
+        "agent_ops_weekly_report": systemd.get("agent_ops_weekly_report", "unavailable"),
+        "agent_ops_weekend_approval": systemd.get("agent_ops_weekend_approval", "unavailable"),
+        "research_daily": systemd.get("research_daily", "unavailable"),
+        "research_weekly": systemd.get("research_weekly", "unavailable"),
+        "market_brain_last_scan": rt.get("market_brain_last_scan_time"),
+        "research_last_report": rt.get("research_latest_report_path") or rt.get("research_daily_report_path"),
+        "agent_ops_last_report": rt.get("agent_ops_latest_weekly_report_path"),
+        "last_scan": rt.get("last_scan_time") or rt.get("market_brain_last_scan_time"),
         "last_trade": rt.get("last_trade_time"),
-        "last_rejection": rt.get("last_rejection_reason"),
+        "last_rejection": rt.get("last_rejection_reason") or rt.get("ig_execution_worker_last_rejection_reason"),
         "last_error": rt.get("last_error"),
     }
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from .controller import AgentOpsController
 from .email_approval import maybe_send
 from .weekend_deployer import run as weekend_run
+from app.telegram_control_room.status_provider import update_runtime
 
 
 def _write(path: Path, content: str):
@@ -55,7 +56,13 @@ Weekend only with approval.
 ## Approval Required / Not Required
 Approval Required
 """
-    return _write(p, txt)
+    report_path = _write(p, txt)
+    update_runtime({
+        "agent_ops_status": "ok",
+        "agent_ops_last_report_time": datetime.now(timezone.utc).isoformat(),
+        "agent_ops_latest_weekly_report_path": str(report_path),
+    })
+    return report_path
 
 
 def request_approval(base: Path):

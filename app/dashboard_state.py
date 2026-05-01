@@ -7,6 +7,8 @@ from app.ig_api_governor import get_ig_cached_snapshot
 from app.market_brain import MarketBrainInput, run_market_brain
 from app.market_brain.adapters import IGAdapter
 from app.agent_ops_controller import collect_agent_ops_state
+from app.telegram_control_room.status_provider import update_runtime
+from datetime import datetime, timezone
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "trades.db")
@@ -56,6 +58,12 @@ def _build_market_brain_state():
     candles = adapter.get_candles([m.get("epic") for m in watchlist if m.get("epic")])
     monthly = {"month_start_capital": account.get("balance", 0.0), "trading_days_remaining": 10}
     out = run_market_brain(MarketBrainInput(watchlist=watchlist, candles=candles, account=account, positions=positions, monthly=monthly))
+    update_runtime({
+        "market_brain_last_scan_time": datetime.now(timezone.utc).isoformat(),
+        "market_brain_last_opportunity_count": len(out.opportunities),
+        "market_brain_last_regime": out.regime.label if out.regime else None,
+        "market_brain_status": "ok",
+    })
     return out.to_dict()
 
 def get_dashboard_state():
