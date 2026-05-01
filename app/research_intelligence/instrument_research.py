@@ -1,0 +1,2 @@
+def instrument_profiles(db_reader=None):
+    return {"unavailable": {"average_movement": "unavailable", "best_session": "unavailable", "worst_session": "unavailable", "spread_behaviour": "unavailable", "volatility_behaviour": "unavailable", "trend_reliability": "unavailable", "mean_reversion_tendency": "unavailable", "past_win_loss": "unavailable", "average_pnl_contribution": "unavailable", "preference": "watch", "rating": "watch"}}
