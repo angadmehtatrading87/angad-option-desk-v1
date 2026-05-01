@@ -6,6 +6,7 @@ from app.learning_engine import recent_learning
 from app.ig_api_governor import get_ig_cached_snapshot
 from app.market_brain import MarketBrainInput, run_market_brain
 from app.market_brain.adapters import IGAdapter
+from app.agent_ops_controller import collect_agent_ops_state
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "trades.db")
@@ -36,6 +37,8 @@ def equity_curve(limit=30):
 def execution_log_snapshot():
     market = load_market_prep_state()
     exec_state = market.get("execution_brain", {})
+    agent_ops = collect_agent_ops_state()
+
     return {
         "last_run_dxb": exec_state.get("last_run_dxb"),
         "selection_result": exec_state.get("selection_result", {}),
@@ -72,4 +75,13 @@ def get_dashboard_state():
         "curve": curve,
         "execution": execution,
         "market_brain": market_brain,
+        "agent_ops": {
+            "current_phase": agent_ops.get("current_phase"),
+            "intelligence_level": agent_ops.get("capability_level"),
+            "runtime_health": agent_ops.get("runtime_health"),
+            "latest_merged_features": agent_ops.get("merged_prs", [])[:3],
+            "weekly_pnl": agent_ops.get("trading_performance", {}).get("weekly_pnl"),
+            "monthly_target_progress": agent_ops.get("trading_performance", {}).get("target_track"),
+            "pending_next_tasks": agent_ops.get("pending_tasks", []),
+        },
     }
