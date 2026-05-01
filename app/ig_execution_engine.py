@@ -18,6 +18,7 @@ from app.ig_smart_trade_brain import evaluate_live_positions, mark_exit_for_reen
 from app.daily_objective_controller import combined_entry_allowed
 from app.lane_capital_controller import lane_entry_allowed, ig_lane_snapshot
 from app.execution_safety_guard import evaluate_execution_safety, record_execution_attempt
+from app.execution_two_phase_commit import finalize_intent, prepare_intent
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICY_PATH = os.path.join(BASE_DIR, "config", "ig_risk_policy.json")
@@ -815,6 +816,21 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
             })
             continue
 
+        prepare = prepare_intent(epic=epic, direction=direction, size=size)
+        if not prepare.get("ok"):
+            skips.append({"epic": epic, "direction": direction, "reason": prepare.get("reason")})
+            submitted.append({
+                "log_id": row_id,
+                "epic": epic,
+                "direction": direction,
+                "size": size,
+                "status": "SKIPPED_PREPARE_REJECTED",
+                "reason": prepare.get("reason"),
+                "metadata": prepare.get("metadata", {})
+            })
+            continue
+
+        intent_key = prepare.get("intent_key")
         trade_ccy = _instrument_currency_code(ig, epic)
 
         result = ig.open_position(
@@ -831,6 +847,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
         deal_ref = body.get("dealReference") if isinstance(body, dict) else None
 
         if not result.get("ok"):
+            finalize_intent(intent_key, status="ABORTED", note="open_position_rejected")
             mark_ig_log(
                 row_id,
                 status="REJECTED",
@@ -855,6 +872,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
         matched_position = recon.get("matched_position")
 
         if matched_position:
+            finalize_intent(intent_key, status="COMMITTED", deal_reference=deal_ref, deal_id=deal_id, note="confirmed_in_book")
             mark_ig_log(
                 row_id,
                 status="CONFIRMED_IN_BOOK",
@@ -887,6 +905,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
                 "deal_id": deal_id,
             })
         elif deal_status == "ACCEPTED":
+            finalize_intent(intent_key, status="COMMITTED", deal_reference=deal_ref, deal_id=deal_id, note="accepted_not_visible_in_book")
             mark_ig_log(
                 row_id,
                 status="ACCEPTED_NOT_VISIBLE_IN_BOOK",
@@ -908,6 +927,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
                 "reason_text": reason_text
             })
         elif deal_status:
+            finalize_intent(intent_key, status="ABORTED", deal_reference=deal_ref, deal_id=deal_id, note="confirm_rejected")
             mark_ig_log(
                 row_id,
                 status="CONFIRM_REJECTED",
@@ -927,6 +947,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
                 "confirm": confirm_body
             })
         else:
+            finalize_intent(intent_key, status="ABORTED", deal_reference=deal_ref, deal_id=deal_id, note="not_visible_in_book")
             mark_ig_log(
                 row_id,
                 status="NOT_VISIBLE_IN_BOOK",
