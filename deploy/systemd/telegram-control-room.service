@@ -1,11 +1,14 @@
 [Unit]
 Description=Telegram Control Room Agent
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
+User=ubuntu
 WorkingDirectory=/home/ubuntu/angad-option-desk-v1
-ExecStart=/usr/bin/python3 -m app.telegram_control_room.cli run
+EnvironmentFile=-/etc/angad-option-desk.env
+ExecStart=/home/ubuntu/angad-option-desk-v1/venv/bin/python -m app.telegram_control_room.cli run
 Restart=always
 RestartSec=5
 

@@ -1,1 +1,10 @@
-# template
+[Unit]
+Description=Run Research Intelligence Daily
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 06:00:00 UTC
+Persistent=true
+Unit=research-daily.service
+
+[Install]
+WantedBy=timers.target

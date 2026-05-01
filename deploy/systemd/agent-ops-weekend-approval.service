@@ -1,1 +1,14 @@
-# template
+[Unit]
+Description=Agent Ops Weekend Deployment Approval Request
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/angad-option-desk-v1
+EnvironmentFile=-/etc/angad-option-desk.env
+ExecStart=/home/ubuntu/angad-option-desk-v1/venv/bin/python -m app.agent_ops.cli request-weekend-approval
+
+[Install]
+WantedBy=multi-user.target
