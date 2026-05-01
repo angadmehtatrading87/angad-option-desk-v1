@@ -3,6 +3,8 @@ import sqlite3
 from app.market_prep_brain import load_market_prep_state
 from app.virtual_portfolio import virtual_account_snapshot
 from app.learning_engine import recent_learning
+from app.ig_api_governor import get_ig_cached_snapshot
+from app.market_brain import MarketBrainInput, run_market_brain
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "trades.db")
@@ -39,6 +41,29 @@ def execution_log_snapshot():
         "entry_results": exec_state.get("entry_results", []),
     }
 
+
+
+def _build_market_brain_state():
+    snap = get_ig_cached_snapshot(force_refresh=False) or {}
+    watchlist = ((snap.get("watchlist") or {}).get("markets") or [])
+    account = snap.get("account") or {}
+    positions = ((snap.get("positions") or {}).get("positions") or [])
+    candles = {}
+    for m in watchlist:
+        epic = m.get("epic")
+        s = ((m.get("snapshot") or {}).get("body") or {}).get("snapshot") or (m.get("snapshot") or {})
+        base = float(s.get("bid") or s.get("offer") or 1.0)
+        high = float(s.get("high") or base * 1.002)
+        low = float(s.get("low") or base * 0.998)
+        candles[epic] = [
+            {"open": base * 0.998, "high": high * 0.997, "low": low * 0.999, "close": base * 0.999},
+            {"open": base * 0.999, "high": high * 0.998, "low": low, "close": base * 1.000},
+            {"open": base * 1.000, "high": high, "low": low, "close": float(s.get("offer") or base)},
+        ]
+    monthly = {"month_start_capital": account.get("balance", 0.0), "trading_days_remaining": 10}
+    out = run_market_brain(MarketBrainInput(watchlist=watchlist, candles=candles, account=account, positions=positions, monthly=monthly))
+    return out.to_dict()
+
 def get_dashboard_state():
     market = load_market_prep_state()
     portfolio = virtual_account_snapshot()
@@ -46,6 +71,7 @@ def get_dashboard_state():
     reporting = load_reporting_state()
     curve = equity_curve(40)
     execution = execution_log_snapshot()
+    market_brain = _build_market_brain_state()
 
     return {
         "market": market,
@@ -54,4 +80,5 @@ def get_dashboard_state():
         "reporting": reporting,
         "curve": curve,
         "execution": execution,
+        "market_brain": market_brain,
     }

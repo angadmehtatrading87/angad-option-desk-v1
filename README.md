@@ -29,3 +29,6 @@ V2 is designed to trade less often, deploy more intentionally, and size by convi
 3. Feed V2 plan into execution engine
 4. Feed pair-level realized P&L into `pair_edge_engine`
 5. Replace simple exits with `position_lifecycle_engine`
+
+## Market Brain (Shadow Mode)
+See `docs/market_brain_architecture.md` for architecture, data flow, and rollout path.
