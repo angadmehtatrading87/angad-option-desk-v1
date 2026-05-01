@@ -1,4 +1,5 @@
 import time
+from app.execution_safety_guard import evaluate_execution_safety
 from app.trading_window import can_open_new_option_trade
 from app.virtual_portfolio import list_open_virtual_positions, virtual_account_snapshot
 from app.spread_builder import propose_spread_candidates
@@ -7,6 +8,11 @@ from app.universe import get_universe_symbols, get_universe_rules
 def main():
     while True:
         try:
+            safety = evaluate_execution_safety(channel="auto_trade_worker", expected_order_count=1)
+            if not safety.get("ok"):
+                time.sleep(60)
+                continue
+
             allowed, _ = can_open_new_option_trade()
             open_positions = list_open_virtual_positions()
             snapshot = virtual_account_snapshot()

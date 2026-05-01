@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from app.ig_adapter import IGAdapter
 from app.ig_execution_engine import eligible_decisions, run_ig_demo_execution
+from app.execution_safety_guard import evaluate_execution_safety
 
 DXB = ZoneInfo("Asia/Dubai")
 LOOP_SECONDS = 30
@@ -26,6 +27,12 @@ def main():
                     "stage": "login",
                     "reason": "ig_login_failed"
                 }))
+                time.sleep(LOOP_SECONDS)
+                continue
+
+            safety = evaluate_execution_safety(channel="ig_execution_worker", expected_order_count=1)
+            if not safety.get("ok"):
+                print(json.dumps({"ts": now_dxb(), "worker": "ig_execution", "stage": "safety", "ok": False, "reason": safety.get("reasons", [])}, default=str))
                 time.sleep(LOOP_SECONDS)
                 continue
 

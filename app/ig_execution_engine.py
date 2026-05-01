@@ -17,6 +17,7 @@ from app.telegram_alerts import send_ig_trade_alert
 from app.ig_smart_trade_brain import evaluate_live_positions, mark_exit_for_reentry, reentry_allowed, size_multiplier
 from app.daily_objective_controller import combined_entry_allowed
 from app.lane_capital_controller import lane_entry_allowed, ig_lane_snapshot
+from app.execution_safety_guard import evaluate_execution_safety, record_execution_attempt
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICY_PATH = os.path.join(BASE_DIR, "config", "ig_risk_policy.json")
@@ -674,6 +675,10 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
     submitted = []
     skips = list(pick.get("skips", []))
 
+    safety = evaluate_execution_safety(channel="ig_execution_engine", expected_order_count=len(decision_list), ig_snapshot=ig_snapshot)
+    if not safety.get("ok"):
+        return {"ok": False, "reason": ["execution_safety_reject", *safety.get("reasons", [])], "submitted": [], "closed": closed, "skips": skips, "safety": safety}
+
     if not decision_list:
         return {
             "ok": True,
@@ -841,6 +846,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
             })
             continue
 
+        record_execution_attempt(count=1)
         recon = _confirm_in_book(ig, epic, direction, size, deal_reference=deal_ref)
         confirm_body = recon.get("confirm_body", {}) or {}
         deal_id = recon.get("deal_id")
