@@ -32,3 +32,5 @@ V2 is designed to trade less often, deploy more intentionally, and size by convi
 
 ## Market Brain (Shadow Mode)
 See `docs/market_brain_architecture.md` for architecture, data flow, and rollout path.
+
+Current state: Market Brain is broker/product-agnostic via adapters. Active integration uses IG snapshot data only, while TastyTrade/options-specific integration is disabled for Market Brain and can be added later through adapters.

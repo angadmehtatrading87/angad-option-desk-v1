@@ -27,7 +27,7 @@ def scan_universe(watchlist: list[dict]) -> list[MarketScanResult]:
 
 def candle_features(epic:str, candles:list[dict]) -> CandleFeatures:
     if len(candles)<3:
-        return CandleFeatures(epic,*([0.0]*15))
+        return CandleFeatures(epic,False,*([0.0]*15))
     closes=[_f(c.get('close')) for c in candles if _f(c.get('close'))>0]
     highs=[_f(c.get('high')) for c in candles]; lows=[_f(c.get('low')) for c in candles]; opens=[_f(c.get('open')) for c in candles]
     n=len(closes)
@@ -46,7 +46,7 @@ def candle_features(epic:str, candles:list[dict]) -> CandleFeatures:
     mean_rev=max(0.0, min(100.0, abs(mom)*1.8 if mom<0 else abs(mom)*0.7))
     cont=max(0.0, min(100.0, mom*2 if mom>0 else 0))
     fail=max(0.0, min(100.0, wick*0.8 + (100-body_q)*0.4))
-    return CandleFeatures(epic,t5,t1h,t4h,mom,body_q,wick,breakout,breakdown,gap,20.0,comp,exp,mean_rev,cont,fail)
+    return CandleFeatures(epic,True,t5,t1h,t4h,mom,body_q,wick,breakout,breakdown,gap,20.0,comp,exp,mean_rev,cont,fail)
 
 
 def classify_regime(features:list[CandleFeatures], scans:list[MarketScanResult])->RegimeSignal:
@@ -129,4 +129,5 @@ def run_market_brain(inp:MarketBrainInput)->MarketBrainOutput:
     alloc=capital_allocate(inp.account, monthly, opps)
     thesis=[thesis_for(o, regime, alloc) for o in opps[:5]]
     rej=[o for o in opps if o.action=='reject']
-    return MarketBrainOutput(datetime.now(timezone.utc).isoformat(), regime, news, monthly, alloc, opps[:10], thesis, rej[:10], {'scanned':len(scans),'heartbeat':'ok','shadow_mode':True})
+    candles_available = sum(1 for f in feats if f.available)
+    return MarketBrainOutput(datetime.now(timezone.utc).isoformat(), regime, news, monthly, alloc, opps[:10], thesis, rej[:10], {'scanned':len(scans),'heartbeat':'ok','shadow_mode':True,'candle_features_available':candles_available,'candle_features_unavailable':max(0,len(feats)-candles_available)})

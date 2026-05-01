@@ -5,14 +5,18 @@ Current execution flow is reactive and can under-deploy capital. Market Brain ad
 
 ## What changed
 - Added `app/market_brain/` package with typed models and orchestration.
+- Added broker/data adapter interfaces (`MarketDataAdapter`, `BrokerAdapter`) and `InstrumentType` enum for forex, index, commodity, equity, option, and future.
+- Added IG adapter implementation as the active source; no TastyTrade dependency in Market Brain paths.
 - Added scanner, candle features, regime classifier, scoring, capital allocation, monthly objective tracker, thesis generator, and learning record model scaffolding.
 - Integrated Market Brain output into dashboard state as `market_brain` in shadow recommendation mode.
+- Removed synthetic candle fabrication in dashboard integration. If real candles are unavailable, candle features are explicitly marked unavailable and recommendations run at reduced quality.
 - Added tests in `tests/test_market_brain.py`.
 
 ## Shadow mode behavior
 - Produces recommendations only.
 - Does not submit orders.
 - Does not bypass safety gate or two-phase commit.
+- Keeps `shadow_mode=true` in diagnostics.
 
 ## Promotion path to execution (later)
 1. Keep safety guard and two-phase commit mandatory.
