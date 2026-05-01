@@ -1,7 +1,10 @@
 import streamlit as st
 import yaml
 import os
+from pathlib import Path
 from datetime import datetime, timezone
+
+from app.agent_ops.controller import AgentOpsController
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -57,3 +60,11 @@ st.success("Agent base service is running.")
 st.write(f"Last dashboard refresh: {datetime.now(timezone.utc).isoformat()} UTC")
 
 st.warning("Auto-trading is disabled. No broker account is connected. No trades can be placed.")
+
+try:
+    agent_ops_state = AgentOpsController(Path(BASE_DIR)).collect()
+except Exception:
+    agent_ops_state = {"status": "unavailable"}
+
+st.subheader("Agent Ops")
+st.write({"agent_ops": {"runtime_health": agent_ops_state.get("runtime_health"), "weekly_pnl": agent_ops_state.get("trading_performance", {}).get("realized_pnl"), "monthly_target_progress": agent_ops_state.get("trading_performance", {}).get("target_progress"), "intelligence_level": agent_ops_state.get("market_brain", {}).get("intelligence_maturity_level"), "current_phase": "agent-ops-and-research-intelligence", "pending_deployment_approval": True, "last_report_path": "reports/weekly_agent_report_YYYYMMDD.md", "worker_status": agent_ops_state.get("runtime_health", {}).get("worker_status"), "last_deployment_status": "unavailable"}})
