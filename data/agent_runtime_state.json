@@ -1,0 +1,14 @@
+{
+  "ig_worker_alive": false,
+  "last_loop_time": null,
+  "last_signal_time": null,
+  "last_intent_time": null,
+  "last_trade_time": null,
+  "last_rejection_reason": null,
+  "execution_mode": "shadow",
+  "safety_gate_status": "enabled",
+  "two_phase_commit_status": "enabled",
+  "market_brain_last_scan_time": null,
+  "api_data_freshness": "unknown",
+  "updated_at": "2026-05-01T09:44:12.985663+00:00"
+}
