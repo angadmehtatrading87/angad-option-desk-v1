@@ -46,16 +46,26 @@ def test_rejects_killswitch_and_low_liquidity(monkeypatch, tmp_path):
     assert "liquidity_reserve_below_30pct" in result["reasons"]
 
 
-def test_rejects_stale_snapshot_and_burst(monkeypatch, tmp_path):
+def test_rejects_stale_snapshot(monkeypatch, tmp_path):
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(g, "get_ig_session_state", lambda: {"session": "london", "market_open": True})
     monkeypatch.setattr(g, "_load_yaml", lambda p: {"kill_switch": False, "account_mode": "simulation"})
-    monkeypatch.setattr(g, "_load_json", lambda p: {"demo_only": True, "safety_max_snapshot_age_seconds": 60, "safety_burst_window_seconds": 120, "safety_max_burst_orders": 2})
+    monkeypatch.setattr(g, "_load_json", lambda p: {"demo_only": True, "safety_max_snapshot_age_seconds": 60, "safety_burst_window_seconds": 120, "safety_max_burst_orders": 3})
 
-    burst = tmp_path / "burst.json"
-    g.record_execution_attempt(count=2, now=now, burst_state_path=str(burst))
     stale = now.replace(year=now.year - 1)
-    result = g.evaluate_execution_safety("unit", expected_order_count=1, ig_snapshot=_ok_snapshot(stale), now=now, burst_state_path=str(burst))
+    result = g.evaluate_execution_safety("unit", expected_order_count=1, ig_snapshot=_ok_snapshot(stale), now=now, burst_state_path=str(tmp_path / "burst.json"))
     assert result["ok"] is False
     assert "snapshot_stale" in result["reasons"]
+
+
+def test_rejects_burst_limit_with_fresh_snapshot(monkeypatch, tmp_path):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(g, "get_ig_session_state", lambda: {"session": "london", "market_open": True})
+    monkeypatch.setattr(g, "_load_yaml", lambda p: {"kill_switch": False, "account_mode": "simulation"})
+
+    policy = {"demo_only": True, "safety_max_snapshot_age_seconds": 60, "safety_burst_window_seconds": 120, "safety_max_burst_orders": 2}
+    monkeypatch.setattr(g, "_load_json", lambda p: policy if p == g.IG_POLICY_PATH else {"orders": [now.isoformat(), now.isoformat()]})
+
+    result = g.evaluate_execution_safety("unit", expected_order_count=1, ig_snapshot=_ok_snapshot(now), now=now, burst_state_path=str(tmp_path / "burst.json"))
+    assert result["ok"] is False
     assert "max_burst_orders_exceeded" in result["reasons"]
