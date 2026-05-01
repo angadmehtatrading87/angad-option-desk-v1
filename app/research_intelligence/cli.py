@@ -7,6 +7,7 @@ from .market_researcher import build_research_context
 from .research_memory import ResearchMemory
 from .strategy_gap_analyzer import analyze
 from .trade_review import review
+from app.telegram_control_room.status_provider import update_runtime
 
 
 def daily(base: Path):
@@ -19,6 +20,12 @@ def daily(base: Path):
     ResearchMemory(base / "data/research_journal.jsonl").append(
         {"session": "daily", "market_regime": ctx["market_bias"], "news_sentiment_availability": "unavailable"}
     )
+    update_runtime({
+        "research_intelligence_status": "ok",
+        "research_last_daily_time": datetime.now(timezone.utc).isoformat(),
+        "research_daily_report_path": str(p),
+        "research_latest_report_path": str(p),
+    })
     return p
 
 
@@ -31,6 +38,12 @@ def weekly(base: Path):
     gaps = analyze(ctx)
     p.write_text("# Weekly Strategy Review\n\n" + str(rv) + "\n" + str(gaps))
     brief = write_brief(base, {"review": rv, "gaps": gaps})
+    update_runtime({
+        "research_intelligence_status": "ok",
+        "research_last_weekly_strategy_review_time": datetime.now(timezone.utc).isoformat(),
+        "research_weekly_report_path": str(p),
+        "research_latest_report_path": str(brief),
+    })
     return p, brief
 
 
