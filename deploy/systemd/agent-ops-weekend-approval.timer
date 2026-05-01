@@ -1,1 +1,10 @@
-# template
+[Unit]
+Description=Run Agent Ops Weekend Deployment Approval Request
+
+[Timer]
+OnCalendar=Fri *-*-* 18:00:00 UTC
+Persistent=true
+Unit=agent-ops-weekend-approval.service
+
+[Install]
+WantedBy=timers.target

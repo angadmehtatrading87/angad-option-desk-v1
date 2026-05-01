@@ -1,1 +1,10 @@
-# template
+[Unit]
+Description=Run Research Intelligence Weekly Strategy Review
+
+[Timer]
+OnCalendar=Sun *-*-* 07:00:00 UTC
+Persistent=true
+Unit=research-weekly.service
+
+[Install]
+WantedBy=timers.target

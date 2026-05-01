@@ -1,1 +1,10 @@
-# template
+[Unit]
+Description=Run Agent Ops Weekly Report
+
+[Timer]
+OnCalendar=Fri *-*-* 17:00:00 UTC
+Persistent=true
+Unit=agent-ops-weekly-report.service
+
+[Install]
+WantedBy=timers.target

@@ -1,1 +1,16 @@
-# template
+[Unit]
+Description=IG Execution Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/angad-option-desk-v1
+EnvironmentFile=-/etc/angad-option-desk.env
+ExecStart=/home/ubuntu/angad-option-desk-v1/venv/bin/python -m app.ig_execution_worker
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
