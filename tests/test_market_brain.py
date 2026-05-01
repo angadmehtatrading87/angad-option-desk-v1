@@ -1,4 +1,6 @@
+import sys
 from app.market_brain import MarketBrainInput, run_market_brain
+from app.market_brain.adapters import IGAdapter, InstrumentType
 from app.market_brain.engines import scan_universe, candle_features, classify_regime, score_opportunity, capital_allocate, monthly_state, news_signal
 
 
@@ -36,3 +38,21 @@ def test_drawdown_reduces_deployable():
 def test_no_data_condition():
     out=run_market_brain(MarketBrainInput(watchlist=[],candles={},account={'equity':1000,'available':1000},positions=[],monthly={}))
     assert out.regime.no_trade is True
+
+
+def test_market_brain_no_tastytrade_dependency():
+    sys.modules.pop("app.tasty_connector", None)
+    out = run_market_brain(MarketBrainInput(watchlist=sample_watch(), candles={}, account={"equity":1000,"available":1000}, positions=[], monthly={}))
+    assert out.diagnostics.get("heartbeat") == "ok"
+
+
+def test_ig_adapter_forex_and_unavailable_candles_safe():
+    snap = {"watchlist": {"markets": sample_watch()}, "account": {"equity": 5000, "available": 5000}, "positions": {"positions": []}}
+    adapter = IGAdapter(snapshot=snap)
+    watchlist = adapter.get_watchlist()
+    candles = adapter.get_candles([watchlist[0]["epic"]])
+    out = run_market_brain(MarketBrainInput(watchlist=watchlist, candles=candles, account=adapter.get_account(), positions=adapter.get_positions(), monthly={}))
+    assert InstrumentType.FOREX.value == "forex"
+    assert out.diagnostics["candle_features_unavailable"] >= 1
+    assert out.news.risk_sentiment == "neutral"
+    assert out.diagnostics["shadow_mode"] is True

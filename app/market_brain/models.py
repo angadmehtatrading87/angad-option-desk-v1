@@ -8,6 +8,7 @@ Action = Literal['trade','watch','reject']
 @dataclass
 class CandleFeatures:
     epic: str
+    available: bool
     trend_5m: float
     trend_1h: float
     trend_4h: float
