@@ -77,7 +77,13 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
             reasons.append("small_trade_suppressed")
 
         if reasons:
-            skips.append({"epic": opp.epic, "reason": ",".join(reasons), "score": opp.opportunity_score, "confidence": opp.confidence_score})
+            skips.append({
+                "epic": opp.epic,
+                "reason": ",".join(reasons),
+                "score": opp.opportunity_score,
+                "confidence": opp.confidence_score,
+                "reject_category": "bad_regime_or_score" if "score_below_high_threshold" in reasons else "risk_or_friction"
+            })
             continue
 
         action = "WATCH_LONG" if opp.direction == "long" else "WATCH_SHORT"
@@ -97,6 +103,7 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
                 "friction": float(opp.friction_cost_estimate or 0.0),
                 "allocation_reason": allocation_reason,
                 "recommended_size": recommended_size,
+                "recommended_size_usd": recommended_size,
                 "conviction_tier": conviction_tier,
             },
         })

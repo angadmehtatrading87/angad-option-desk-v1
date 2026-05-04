@@ -2,6 +2,7 @@ import json
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import requests
 
 from app.ig_adapter import IGAdapter
 from app.ig_execution_engine import eligible_decisions, run_ig_demo_execution
@@ -16,6 +17,7 @@ def now_dxb():
     return datetime.now(DXB).isoformat()
 
 def main():
+    consecutive_api_timeouts = 0
     while True:
         try:
             ig = IGAdapter()
@@ -114,8 +116,32 @@ def main():
                 "skips": result.get("skips", []),
             }, default=str))
 
+            consecutive_api_timeouts = 0
             time.sleep(LOOP_SECONDS)
 
+        except requests.exceptions.Timeout as e:
+            consecutive_api_timeouts += 1
+            backoff = min(300, LOOP_SECONDS * consecutive_api_timeouts)
+            update_runtime({
+                "worker_status": "alive",
+                "last_worker_loop_time": now_dxb(),
+                "ig_execution_worker_last_run_status": "api_timeout",
+                "last_error": str(e)[:500],
+                "ig_execution_worker_status": "degraded",
+                "ig_api_timeout_consecutive": consecutive_api_timeouts,
+                "ig_api_health": "degraded" if consecutive_api_timeouts < 3 else "critical",
+                "ig_api_backoff_seconds": backoff,
+            })
+            print(json.dumps({
+                "ts": now_dxb(),
+                "worker": "ig_execution",
+                "ok": False,
+                "stage": "api_timeout",
+                "consecutive_api_timeouts": consecutive_api_timeouts,
+                "backoff_seconds": backoff,
+                "error": str(e)
+            }))
+            time.sleep(backoff)
         except Exception as e:
             update_runtime({
                 "worker_status": "alive",
@@ -123,6 +149,7 @@ def main():
                 "ig_execution_worker_last_run_status": "exception",
                 "last_error": str(e)[:500],
                 "ig_execution_worker_status": "inactive",
+                "ig_api_timeout_consecutive": consecutive_api_timeouts,
             })
             print(json.dumps({
                 "ts": now_dxb(),
