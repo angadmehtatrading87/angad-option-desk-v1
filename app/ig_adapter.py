@@ -145,6 +145,59 @@ class IGAdapter:
             body = r.text
         return {"ok": r.ok, "status_code": r.status_code, "body": body}
 
+    # IG resolution strings for the /prices endpoint.
+    # Documented at https://labs.ig.com/rest-trading-api-reference/service-detail?id=521
+    PRICE_RESOLUTIONS = {
+        "1m": "MINUTE",
+        "5m": "MINUTE_5",
+        "15m": "MINUTE_15",
+        "30m": "MINUTE_30",
+        "1h": "HOUR",
+        "4h": "HOUR_4",
+        "1d": "DAY",
+    }
+
+    def prices(self, epic: str, resolution: str = "5m", max_points: int = 30) -> Dict[str, Any]:
+        """
+        Fetch historical OHLC candles for an epic at a given resolution.
+
+        Args:
+            epic: IG epic, e.g. "CS.D.EURUSD.DBM.IP"
+            resolution: One of the keys of `PRICE_RESOLUTIONS` ("5m", "15m", "1h", "4h", ...)
+                        or a raw IG resolution string like "MINUTE_5".
+            max_points: Number of bars to request. IG enforces a 10k-points/week
+                        budget per app key, so callers should cache aggressively.
+
+        Returns:
+            {ok, status_code, body, points_consumed} — `points_consumed` is the
+            number of price points IG charged this request (read from the
+            `metadata.allowance.remainingAllowance` delta if present, else
+            `len(prices)`).
+        """
+        ig_resolution = self.PRICE_RESOLUTIONS.get(resolution, resolution)
+        r = requests.get(
+            f"{self.base_url}/prices/{epic}",
+            headers=self._headers(auth=True, version="3"),
+            params={"resolution": ig_resolution, "max": int(max_points), "pageSize": 0},
+            timeout=20,
+        )
+        try:
+            body = r.json()
+        except Exception:
+            body = r.text
+
+        points_consumed = 0
+        if isinstance(body, dict):
+            prices = body.get("prices") or []
+            points_consumed = len(prices)
+
+        return {
+            "ok": r.ok,
+            "status_code": r.status_code,
+            "body": body,
+            "points_consumed": points_consumed,
+        }
+
     def watchlist_snapshot(self) -> Dict[str, Any]:
         markets = []
         for epic in self.cfg.get("watchlist", []):

@@ -3,6 +3,9 @@ from pathlib import Path
 from typing import Any
 
 ACTIVE_TABLES={"ig_trade_log","virtual_equity_log","virtual_account","virtual_positions","trade_proposals","learning_log"}
+# Tables that exist in legacy DBs but should be ignored by the agent reporting layer.
+# Kept defensive — Tastytrade integration was removed but a deployed DB may still
+# carry these tables for one or two upgrade cycles.
 IGNORED_TABLES={"tasty_virtual_events","tasty_virtual_positions"}
 
 class DBReader:

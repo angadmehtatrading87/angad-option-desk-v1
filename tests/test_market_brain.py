@@ -1,4 +1,3 @@
-import sys
 from app.market_brain import MarketBrainInput, run_market_brain
 from app.market_brain.adapters import IGAdapter, InstrumentType
 from app.market_brain.engines import scan_universe, candle_features, classify_regime, score_opportunity, capital_allocate, monthly_state, news_signal
@@ -40,8 +39,10 @@ def test_no_data_condition():
     assert out.regime.no_trade is True
 
 
-def test_market_brain_no_tastytrade_dependency():
-    sys.modules.pop("app.tasty_connector", None)
+def test_market_brain_runs_without_legacy_options_modules():
+    # Tastytrade and the legacy options stack were removed; this test guards
+    # against a regression where market_brain re-introduces a hard import on
+    # any of those modules.
     out = run_market_brain(MarketBrainInput(watchlist=sample_watch(), candles={}, account={"equity":1000,"available":1000}, positions=[], monthly={}))
     assert out.diagnostics.get("heartbeat") == "ok"
 

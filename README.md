@@ -33,4 +33,4 @@ V2 is designed to trade less often, deploy more intentionally, and size by convi
 ## Market Brain (Shadow Mode)
 See `docs/market_brain_architecture.md` for architecture, data flow, and rollout path.
 
-Current state: Market Brain is broker/product-agnostic via adapters. Active integration uses IG snapshot data only, while TastyTrade/options-specific integration is disabled for Market Brain and can be added later through adapters.
+Current state: Market Brain is broker/product-agnostic via adapters. The only active broker is **IG (demo account)** for FX/CFD trading. The Tastytrade options integration was removed in 2026-05; the broker layer, OAuth flow, virtual livebook, and the entire legacy options-trading stack (option_chain, quote_engine, spread_builder, order_preview, manual_ticket, market_scanner, plus the parallel `execution_engine`/`execution_brain` pipeline) have all been deleted. The live trader is `app/ig_execution_worker.py`. See `cleanup/remove_tastytrade.sh` for the deletion manifest.
