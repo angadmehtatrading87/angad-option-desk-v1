@@ -1,24 +1,33 @@
-from .status_provider import get_status, get_performance, get_github_report, get_approval
+from .status_provider import (
+    get_status,
+    get_performance,
+    get_github_report,
+    get_approval,
+    get_positions,
+    get_capital,
+    get_risk,
+    get_why_no_trade,
+    get_trades_today,
+)
 
 
-def render_simple(name: str) -> str:
-    return f"{name}: Command supported; data unavailable in this environment."
-
-
-def render_status() -> str:
-    s = get_status()
-    lines = ["Control Room Status"] + [f"{k}: {v}" for k, v in s.items()]
+def _render_block(title: str, payload: dict) -> str:
+    if payload.get("unavailable_reason"):
+        return f"{title}: unavailable because {payload['unavailable_reason']}"
+    lines = [title] + [f"{k}: {v if v is not None else 'unavailable'}" for k, v in payload.items()]
     return "\n".join(lines)
 
 
+def render_status() -> str:
+    return _render_block("Control Room Status", get_status())
+
+
 def render_performance() -> str:
-    p = get_performance()
-    return "\n".join(["Performance"] + [f"{k}: {v if v is not None else 'unavailable'}" for k, v in p.items()])
+    return _render_block("Performance", get_performance())
 
 
 def render_github() -> str:
-    g = get_github_report()
-    return "\n".join(["GitHub/Deployment"] + [f"{k}: {v}" for k, v in g.items()])
+    return _render_block("GitHub/Deployment", get_github_report())
 
 
 def render_approval() -> str:
@@ -31,21 +40,31 @@ def render_approval() -> str:
 def render_help() -> str:
     return (
         "Telegram Control Room commands:\n"
-        "/status /trades_today /performance /intelligence /research /github /report /approval\n"
-        "/approve_deploy /reject_deploy /kill_switch /system_resume /help\n\n"
+        "/status /trades_today /performance /positions /capital /risk /why_no_trade /github /approval /help\n"
+        "/approve_deploy /reject_deploy /kill_switch /system_resume\n\n"
         "Telegram is for monitoring, deployment approval, and emergency controls only. "
         "It is not a trade approval terminal."
     )
 
 
 def render_positions() -> str:
-    return render_simple("positions")
+    payload = get_positions()
+    if payload.get("open_positions") == 0:
+        return "Positions: no open positions."
+    return _render_block("Positions", payload)
+
 
 def render_capital() -> str:
-    return render_simple("capital")
+    return _render_block("Capital", get_capital())
+
 
 def render_risk() -> str:
-    return render_simple("risk")
+    return _render_block("Risk", get_risk())
+
 
 def render_why_no_trade() -> str:
-    return render_simple("why_no_trade")
+    return _render_block("Why No Trade", get_why_no_trade())
+
+
+def render_trades_today() -> str:
+    return _render_block("Trades Today", get_trades_today())

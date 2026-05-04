@@ -13,3 +13,8 @@ backups/
 *.key
 *.csv
 *.zip
+
+# runtime-generated artifacts
+data/agent_runtime_state.json
+reports/*.md
+reports/*.log
