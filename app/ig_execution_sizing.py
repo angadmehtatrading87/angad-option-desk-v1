@@ -105,14 +105,18 @@ def get_execution_sizing_plan(now=None):
         v2_candidates = []
 
     if portfolio.get("should_block_new"):
+        block_rule = str(portfolio.get("block_rule") or "portfolio_risk_control")
         if v2_deployment_mode == "EXPAND" and len(v2_candidates) > 0:
             deployment_mode = "v2_expand_probe"
             size_multiplier = max(size_multiplier or 0.0, 0.35)
-            block_reasons.append("portfolio_block_new_v2_override")
+            block_reasons.append(f"portfolio_block_new_v2_override:{block_rule}")
         else:
             entry_allowed = False
             size_multiplier = 0.0
             block_reasons.append("portfolio_block_new")
+            block_reasons.append(f"portfolio_block_rule:{block_rule}")
+            if portfolio.get("block_reason"):
+                block_reasons.append(f"portfolio_block_reason:{portfolio.get('block_reason')}")
     if execution_quality.get("should_block"):
         entry_allowed = False
         size_multiplier = 0.0
@@ -141,6 +145,9 @@ def get_execution_sizing_plan(now=None):
 
     if size_multiplier < 0:
         size_multiplier = 0.0
+
+    if str(regime.get("regime") or "").upper() == "CHOP":
+        block_reasons.append("capital_preserved_poor_regime_quality")
 
     if deployment_mode in ("v2_expand_probe", "scale") and entry_allowed and len(v2_candidates) > 0:
         size_multiplier = max(size_multiplier, 0.35)

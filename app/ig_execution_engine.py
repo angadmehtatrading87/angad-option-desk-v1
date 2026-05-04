@@ -163,6 +163,24 @@ def _confidence_size_boost(confidence):
         return 1.1
     return 1.0
 
+def _market_brain_allocation_multiplier(decision, sizing_plan, controls):
+    mb = (decision or {}).get("market_brain", {}) or {}
+    score = float(mb.get("score") or 0.0)
+    friction = float(mb.get("friction") or 0.0)
+    regime = str(((sizing_plan or {}).get("regime_state") or {}).get("regime") or "").upper()
+    mode = str((sizing_plan or {}).get("deployment_mode") or "").lower()
+    deployment_gap = float((controls or {}).get("deployment_gap_pct") or 0.0)
+
+    if regime == "CHOP" or mode in ("probe", "maintain"):
+        return 0.35, "Capital preserved because regime quality is poor."
+    if friction > 0.003:
+        return 0.5, "size_reduced_high_friction"
+    if score >= 85 and deployment_gap >= 8:
+        return 1.6, "high_conviction_expand"
+    if score >= 75:
+        return 1.2, "trend_expand"
+    return 0.0, "weak_or_unclear_setup"
+
 def action_to_direction(action):
     if action == "WATCH_LONG":
         return "BUY"
@@ -615,6 +633,7 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
         return {"ok": False, "reason": [why], "submitted": [], "closed": [], "skips": []}
 
     sizing_plan = get_execution_sizing_plan()
+    controls = _capital_scaled_controls(policy)
 
     if precomputed_pick is not None:
         pick = precomputed_pick
@@ -653,12 +672,24 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
             )
 
             if not only_regime_block:
+                portfolio = sizing_plan.get("portfolio_intelligence", {}) or {}
                 return {
                     "ok": False,
                     "reason": sizing_block_reasons or ["entry_blocked"],
                     "submitted": [],
                     "closed": closed if 'closed' in locals() else [],
-                    "skips": []
+                    "skips": [{
+                        "reason": "portfolio_block_new",
+                        "open_positions": portfolio.get("total_positions"),
+                        "current_exposure": portfolio.get("total_size"),
+                        "max_allowed_exposure": controls.get("max_open"),
+                        "deployable_capital": controls.get("available"),
+                        "capital_used": controls.get("deployed_notional"),
+                        "liquidity_reserve": round(float(controls.get("lane_equity", 0.0)) * 0.30, 2),
+                        "block_rule_name": portfolio.get("block_rule") or "unknown",
+                        "block_reason": portfolio.get("block_reason") or ",".join(sizing_block_reasons),
+                        "is_overly_conservative": bool(portfolio.get("is_overly_conservative", False))
+                    }]
                 }
     pick = precomputed_pick if precomputed_pick is not None else eligible_decisions(ig=ig, login=login)
     if not pick.get("ok"):
@@ -690,7 +721,6 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
         }
 
     live = _live_position_summary(ig)
-    controls = _capital_scaled_controls(policy)
     max_open = int(controls.get("max_open", policy.get("max_concurrent_positions", 12)))
     max_positions_per_epic = int(controls.get("max_positions_per_epic", policy.get("max_positions_per_epic", 3)))
 
@@ -725,6 +755,8 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
             )
 
         original_size = size
+        mb_mult, size_reason = _market_brain_allocation_multiplier(d, trade_sizing_plan, controls)
+        size = size * max(mb_mult, 0.0)
         size = scale_order_size(size, trade_sizing_plan)
         size = round(size * _confidence_size_boost(confidence), 4)
         size = _round_size_for_ig(size, step=0.1, min_size=0.1)
@@ -806,6 +838,9 @@ def run_ig_demo_execution(precomputed_pick=None, ig=None, login=None):
                 "size": size,
                 "base_size": original_size,
                 "deployment_mode": trade_sizing_plan.get("deployment_mode"),
+                "recommended_size": ((d.get("market_brain") or {}).get("recommended_size")),
+                "final_approved_size": size,
+                "size_reduction_reason": size_reason,
                 "size_multiplier": trade_sizing_plan.get("size_multiplier"),
                 "adaptive_behavior": trade_sizing_plan.get("adaptive_behavior", {}),
                 "stop_distance": stop_distance,

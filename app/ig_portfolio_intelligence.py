@@ -113,11 +113,25 @@ def build_portfolio_intelligence():
         should_reduce = False
         should_block_new = False
 
+    block_rule = ""
+    block_reason = ""
+    is_overly_conservative = False
+
     if total_positions >= 10:
         should_block_new = True
         deployment_bias = "book_full"
         size_adjustment = 0.0
         notes.append("Book too full; block new deployment.")
+        block_rule = "max_open_positions"
+        block_reason = "open_positions_gte_10"
+    elif not live.get("broker_snapshot_ok", False):
+        should_block_new = True
+        deployment_bias = "book_state_uncertain"
+        size_adjustment = min(size_adjustment, 0.5)
+        notes.append("Broker snapshot stale/unavailable; block new deployment.")
+        block_rule = "stale_portfolio_state"
+        block_reason = "broker_snapshot_not_ok"
+        is_overly_conservative = True
 
     return {
         "broker_snapshot_ok": bool(live.get("broker_snapshot_ok", False)),
@@ -135,6 +149,9 @@ def build_portfolio_intelligence():
         "size_adjustment": size_adjustment,
         "should_reduce": should_reduce,
         "should_block_new": should_block_new,
+        "block_rule": block_rule,
+        "block_reason": block_reason,
+        "is_overly_conservative": bool(is_overly_conservative),
         "notes": notes,
         "source": live.get("source"),
     }
