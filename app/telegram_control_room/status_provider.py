@@ -130,7 +130,7 @@ def get_status() -> dict:
 
 def get_performance() -> dict:
     if not _table_exists("virtual_equity_log"):
-        return {"unavailable_reason": "virtual_equity_log has no rows or table is missing"}
+        return {"command": "performance", "unavailable_reason": "virtual_equity_log has no rows or table is missing"}
     eq = _fetchone(
         "SELECT realized_pnl, unrealized_pnl, total_equity, created_at FROM virtual_equity_log ORDER BY created_at DESC, id DESC LIMIT 1"
     )
@@ -140,6 +140,7 @@ def get_performance() -> dict:
     closed_pos = _fetchone("SELECT COUNT(*) FROM virtual_positions WHERE lower(COALESCE(status,'')) = 'closed'") if _table_exists("virtual_positions") else None
     feedback = _fetchone("SELECT outcome, feedback FROM learning_log ORDER BY id DESC LIMIT 1") if _table_exists("learning_log") else None
     return {
+        "command": "performance",
         "realized_pnl": eq[0] if eq else None,
         "unrealized_pnl": eq[1] if eq else None,
         "total_equity": eq[2] if eq else None,
@@ -156,10 +157,11 @@ def get_performance() -> dict:
 
 def get_trades_today() -> dict:
     if not _table_exists("ig_trade_log"):
-        return {"unavailable_reason": "ig_trade_log table is missing"}
+        return {"command": "trades_today", "unavailable_reason": "ig_trade_log table is missing"}
     count = _count_today("ig_trade_log", "created_at")
     latest = _fetchone("SELECT COALESCE(symbol, epic), action, confidence, status, reason FROM ig_trade_log ORDER BY created_at DESC, id DESC LIMIT 1")
     return {
+        "command": "trades_today",
         "today_trade_count": count,
         "latest_symbol_or_epic": latest[0] if latest else None,
         "latest_action": latest[1] if latest else None,
@@ -171,10 +173,11 @@ def get_trades_today() -> dict:
 
 def get_positions() -> dict:
     if not _table_exists("virtual_positions"):
-        return {"unavailable_reason": "virtual_positions table is missing"}
+        return {"command": "positions", "unavailable_reason": "virtual_positions table is missing"}
     open_count = _fetchone("SELECT COUNT(*) FROM virtual_positions WHERE lower(COALESCE(status,'')) = 'open'")
     latest = _fetchone("SELECT symbol, epic, action, size, status, realized_pnl FROM virtual_positions WHERE lower(COALESCE(status,'')) = 'open' ORDER BY id DESC LIMIT 1")
     return {
+        "command": "positions",
         "open_positions": open_count[0] if open_count else 0,
         "latest_open_symbol": latest[0] if latest else None,
         "latest_open_epic": latest[1] if latest else None,
@@ -187,13 +190,14 @@ def get_positions() -> dict:
 
 def get_capital() -> dict:
     if not _table_exists("virtual_account"):
-        return {"unavailable_reason": "virtual_account table is missing"}
+        return {"command": "capital", "unavailable_reason": "virtual_account table is missing"}
     acct = _fetchone("SELECT starting_capital, cash_balance FROM virtual_account ORDER BY id DESC LIMIT 1")
     eq = _fetchone("SELECT realized_pnl, unrealized_pnl, total_equity FROM virtual_equity_log ORDER BY id DESC LIMIT 1") if _table_exists("virtual_equity_log") else None
     utilization = None
     if acct and eq and acct[0]:
         utilization = round((eq[2] / acct[0]) * 100.0, 2) if eq[2] is not None else None
     return {
+        "command": "capital",
         "starting_capital": acct[0] if acct else None,
         "cash_balance": acct[1] if acct else None,
         "realized_pnl": eq[0] if eq else None,
@@ -207,6 +211,7 @@ def get_risk() -> dict:
     rt = _safe_json(RUNTIME_STATE)
     open_exposure = _fetchone("SELECT SUM(ABS(COALESCE(size, 0))) FROM virtual_positions WHERE lower(COALESCE(status,''))='open'") if _table_exists("virtual_positions") else None
     return {
+        "command": "risk",
         "kill_switch": rt.get("kill_switch", False),
         "execution_mode": rt.get("execution_mode", "unknown"),
         "reserve_rule": rt.get("reserve_rule") or "unavailable: reserve_rule missing in runtime state",
@@ -218,11 +223,15 @@ def get_risk() -> dict:
 def get_why_no_trade() -> dict:
     rt = _safe_json(RUNTIME_STATE)
     return {
+        "command": "why_no_trade",
         "worker_status": rt.get("worker_status", "state_file_missing"),
         "last_decision_count": rt.get("decision_count", "unavailable: decision_count missing in runtime state"),
+        "last_skip_count": rt.get("skip_count", "unavailable: skip_count missing in runtime state"),
         "last_skip_reason": rt.get("last_skip_reason", "unavailable: last_skip_reason missing in runtime state"),
+        "run_reason": rt.get("run_reason", "unavailable: run_reason missing in runtime state"),
         "portfolio_block_reason": rt.get("portfolio_block_reason", "unavailable: portfolio_block_reason missing in runtime state"),
-        "api_error": rt.get("last_error") or rt.get("api_timeout_error") or "none",
+        "api_error": rt.get("api_error") or rt.get("last_error") or rt.get("api_timeout_error") or "none",
+        "last_loop_time": rt.get("last_loop_time") or rt.get("last_worker_loop_time") or "unavailable: last_loop_time missing in runtime state",
     }
 
 

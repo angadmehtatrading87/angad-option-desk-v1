@@ -13,7 +13,9 @@ from .status_provider import (
 
 def _render_block(title: str, payload: dict) -> str:
     if payload.get("unavailable_reason"):
-        return f"{title}: unavailable because {payload['unavailable_reason']}"
+        command = payload.get("command")
+        prefix = f"{title}\ncommand: {command}\n" if command else f"{title}\n"
+        return f"{prefix}unavailable_reason: {payload['unavailable_reason']}"
     lines = [title] + [f"{k}: {v if v is not None else 'unavailable'}" for k, v in payload.items()]
     return "\n".join(lines)
 
