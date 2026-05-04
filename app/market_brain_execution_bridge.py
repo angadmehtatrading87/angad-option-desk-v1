@@ -4,6 +4,7 @@ from typing import Any
 
 from app.market_brain import MarketBrainInput, run_market_brain
 from app.market_brain.adapters import IGAdapter as MarketBrainIGAdapter
+from app.autonomous_trader_architecture import capital_allocation, validate_market_data
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -31,12 +32,21 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
         return {"ok": False, "reason": [cfg["blocked_reason"]], "decisions": [], "skips": [], "bridge": {"config": cfg}}
 
     snap_adapter = MarketBrainIGAdapter(snapshot=None)
-    watchlist = snap_adapter.get_watchlist()
-    account = snap_adapter.get_account()
-    positions = snap_adapter.get_positions()
-    candles = snap_adapter.get_candles([m.get("epic") for m in watchlist if m.get("epic")])
+    watchlist = snap_adapter.get_watchlist() or []
+    account = snap_adapter.get_account() or {}
+    positions = snap_adapter.get_positions() or []
+    candles = snap_adapter.get_candles([m.get("epic") for m in watchlist if isinstance(m, dict) and m.get("epic")]) or {}
     monthly = {"month_start_capital": account.get("balance", 0.0), "trading_days_remaining": 10}
     out = run_market_brain(MarketBrainInput(watchlist=watchlist, candles=candles, account=account, positions=positions, monthly=monthly))
+
+    data_health = validate_market_data({
+        "timestamp": account.get("snapshot_time") or account.get("timestamp"),
+        "account": account,
+        "positions": positions,
+        "watchlist": watchlist,
+    })
+    if not data_health.get("ok"):
+        return {"ok": False, "reason": data_health.get("reasons", []), "decisions": [], "skips": [], "bridge": {"config": cfg, "api_health": data_health.get("api_health")}}
 
     total_cap = float(out.capital.total_capital or 0.0)
     deployable = float(out.capital.deployable_capital or 0.0)
@@ -71,6 +81,9 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
             reasons.append("missing_trade_thesis")
 
         recommended_size = float((thesis.recommended_size if thesis else 0.0) or 0.0)
+        regime_name = str((opp.regime if hasattr(opp, "regime") else "TREND") or "TREND").upper()
+        alloc = capital_allocation(total_cap, used, float(opp.opportunity_score or 0.0), regime_name)
+        recommended_size = max(recommended_size, float(alloc.get("recommended_notional", 0.0) or 0.0))
         min_meaningful = max(2500.0, deployable * 0.03)
         is_probe = bool((opp.components or {}).get("probe_trade", False))
         if recommended_size < min_meaningful and not is_probe:
