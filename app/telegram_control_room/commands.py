@@ -1,6 +1,10 @@
 from .status_provider import get_status, get_performance, get_github_report, get_approval
 
 
+def render_simple(name: str) -> str:
+    return f"{name}: Command supported; data unavailable in this environment."
+
+
 def render_status() -> str:
     s = get_status()
     lines = ["Control Room Status"] + [f"{k}: {v}" for k, v in s.items()]
@@ -32,3 +36,16 @@ def render_help() -> str:
         "Telegram is for monitoring, deployment approval, and emergency controls only. "
         "It is not a trade approval terminal."
     )
+
+
+def render_positions() -> str:
+    return render_simple("positions")
+
+def render_capital() -> str:
+    return render_simple("capital")
+
+def render_risk() -> str:
+    return render_simple("risk")
+
+def render_why_no_trade() -> str:
+    return render_simple("why_no_trade")
