@@ -1,5 +1,5 @@
 from .auth import is_authorized_chat
-from .commands import render_status, render_performance, render_github, render_approval, render_help
+from .commands import render_status, render_performance, render_github, render_approval, render_help, render_positions, render_capital, render_risk, render_why_no_trade
 from .approval_handler import approve_deployment, reject_deployment
 from .kill_switch import activate_kill_switch, resume_system
 
@@ -28,6 +28,14 @@ class TelegramControlRoomBot:
         if cmd == "/system_resume":
             ok, msg = resume_system(str(chat_id), arg)
             return msg
+        if cmd == "/positions":
+            return render_positions()
+        if cmd == "/capital":
+            return render_capital()
+        if cmd == "/risk":
+            return render_risk()
+        if cmd == "/why_no_trade":
+            return render_why_no_trade()
         if cmd == "/help":
             return render_help()
         if cmd in {"/trades_today", "/intelligence", "/research", "/report"}:
