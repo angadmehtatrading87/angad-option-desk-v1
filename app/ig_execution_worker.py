@@ -1,5 +1,6 @@
 import json
 import time
+import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import requests
@@ -63,10 +64,17 @@ def main():
             cap_util = bridge.get("capital_utilization", {}) if isinstance(bridge, dict) else {}
             update_runtime({
                 "worker_status": "alive",
+                "last_loop_time": now_dxb(),
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_decision_count": len(pick.get("decisions", [])),
                 "ig_execution_worker_last_rejection_reason": ",".join([str(x) for x in pick_reason])[:500] if pick_reason else None,
                 "ig_execution_worker_status": "running" if pick.get("ok") else "inactive",
+                "decision_count": len(pick.get("decisions", [])),
+                "skip_count": len(pick.get("skips", [])),
+                "last_skip_reason": (pick.get("skips") or [{}])[0].get("reason") if pick.get("skips") else None,
+                "run_reason": ",".join([str(x) for x in pick_reason])[:500] if pick_reason else None,
+                "portfolio_block_reason": (pick.get("portfolio", {}) or {}).get("reason") if isinstance(pick.get("portfolio", {}), dict) else None,
+                "api_error": None,
                 "market_brain_execution_enabled": bool(mb_cfg.get("enabled")),
                 "market_brain_execution_mode": mb_cfg.get("mode"),
                 "market_brain_last_trade_candidate": (pick.get("decisions") or [None])[0],
@@ -99,9 +107,11 @@ def main():
                     break
             update_runtime({
                 "worker_status": "alive",
+                "last_loop_time": now_dxb(),
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_run_status": "ok" if result.get("ok") else "error",
                 "last_error": None if result.get("ok") else str(result.get("reason", []))[:500],
+                "api_error": None if result.get("ok") else str(result.get("reason", []))[:500],
                 "market_brain_last_executed_trade": executed,
             })
 
@@ -124,9 +134,11 @@ def main():
             backoff = min(300, LOOP_SECONDS * consecutive_api_timeouts)
             update_runtime({
                 "worker_status": "alive",
+                "last_loop_time": now_dxb(),
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_run_status": "api_timeout",
                 "last_error": str(e)[:500],
+                "api_error": str(e)[:500],
                 "ig_execution_worker_status": "degraded",
                 "ig_api_timeout_consecutive": consecutive_api_timeouts,
                 "ig_api_health": "degraded" if consecutive_api_timeouts < 3 else "critical",
@@ -143,11 +155,15 @@ def main():
             }))
             time.sleep(backoff)
         except Exception as e:
+            error_trace = traceback.format_exc()
             update_runtime({
                 "worker_status": "alive",
+                "last_loop_time": now_dxb(),
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_run_status": "exception",
                 "last_error": str(e)[:500],
+                "api_error": str(e)[:500],
+                "last_traceback": error_trace[-4000:],
                 "ig_execution_worker_status": "inactive",
                 "ig_api_timeout_consecutive": consecutive_api_timeouts,
             })
@@ -156,7 +172,8 @@ def main():
                 "worker": "ig_execution",
                 "ok": False,
                 "stage": "exception",
-                "error": str(e)
+                "error": str(e),
+                "traceback": error_trace,
             }))
             time.sleep(LOOP_SECONDS)
 
