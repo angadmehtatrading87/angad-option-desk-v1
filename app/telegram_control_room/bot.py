@@ -1,5 +1,5 @@
 from .auth import is_authorized_chat
-from .commands import render_status, render_performance, render_github, render_approval, render_help, render_positions, render_capital, render_risk, render_why_no_trade
+from .commands import render_status, render_performance, render_github, render_approval, render_help, render_positions, render_capital, render_risk, render_why_no_trade, render_trades_today
 from .approval_handler import approve_deployment, reject_deployment
 from .kill_switch import activate_kill_switch, resume_system
 
@@ -38,6 +38,8 @@ class TelegramControlRoomBot:
             return render_why_no_trade()
         if cmd == "/help":
             return render_help()
-        if cmd in {"/trades_today", "/intelligence", "/research", "/report"}:
+        if cmd == "/trades_today":
+            return render_trades_today()
+        if cmd in {"/intelligence", "/research", "/report"}:
             return "Command supported; data unavailable in this environment."
         return "Unknown command. Use /help."
