@@ -63,7 +63,10 @@ def test_no_shell_or_secrets(monkeypatch):
     assert "Unknown command" in out
 
 
-def test_tasty_tables_ignored(monkeypatch, tmp_path):
+def test_performance_handles_legacy_table_remnants(monkeypatch, tmp_path):
+    # After the Tastytrade strip the agent_ops db_reader still defensively
+    # ignores the old `tasty_virtual_*` tables in case a deployed DB still
+    # has them. /performance must keep rendering its summary either way.
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TELEGRAM_ALLOWED_CHAT_ID", "1")
     out = TelegramControlRoomBot().handle_command("1", "/performance")

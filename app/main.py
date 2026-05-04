@@ -1,4 +1,3 @@
-from app.tasty_virtual_livebook import load_tasty_virtual_livebook
 from app.ig_learning_memory import summarize_memory, latest_daily_review
 from app.ig_position_takeover import takeover_view
 from app.ig_session_intelligence import get_ig_session_state
@@ -6,7 +5,7 @@ from app.ig_no_trade_reason_engine import get_no_trade_reasons
 from app.ig_api_governor import get_ig_cached_snapshot
 from app.lane_capital_controller import lane_capital_state
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from app.dashboard_state import get_dashboard_state
 from app.research_state import get_research_state
 from app.ig_decision_engine import build_ig_decisions
@@ -19,15 +18,11 @@ import yaml
 import os
 import random
 
-from app.trade_store import create_trade, list_trades, update_trade_status
-from app.risk_engine import evaluate_trade
-from app.telegram_alerts import send_telegram_message
-from app.market_scanner import run_scan
 from app.config_manager import set_kill_switch, set_scanner_enabled
 from app.system_health import get_system_health
 from app.trading_window import trading_window_status
-from app.virtual_portfolio import virtual_account_snapshot
 from app.news_macro import latest_news_macro
+from app.fx_history import latest_fx_regime, fetch_fx_history
 
 
 def status_pill_class(status):
@@ -38,15 +33,8 @@ def status_pill_class(status):
         return "bad"
     return "warn"
 
-from app.virtual_exit import evaluate_open_positions, close_position_now
-from app.fx_history import latest_fx_regime, fetch_fx_history
-from app.tasty_connector import tasty_config, get_balances, get_positions, get_accounts
-from app.option_chain import get_chain_summary
-from app.spread_builder import propose_spread_candidates
-from app.order_preview import preview_trade_order
-from app.manual_ticket import generate_manual_ticket, mark_executed, mark_not_executed
 
-app = FastAPI(title="Angad Option Desk v1")
+app = FastAPI(title="Autobot Trader Pro — IG")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -54,11 +42,23 @@ def load_yaml(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def dashboard():
+    """Root path → redirect to the IG desk. The legacy options-trading
+    dashboard (with manual ticketing, virtual portfolio, etc.) was removed
+    in the Tastytrade strip; the IG desk is the live homepage now."""
+    return RedirectResponse(url="/ig-desk", status_code=307)
+
+
+def _legacy_dashboard_DEAD():
+    # NOTE: this body is preserved only because parts of it generate HTML used
+    # elsewhere as a style template. It is no longer reachable. The legacy
+    # imports (list_trades, virtual_account_snapshot, run_scan, manual_ticket,
+    # tasty_*, option_chain, spread_builder, order_preview) have been removed.
+    # Cleanup of the rest of the orphan routes happens in cleanup/remove_tastytrade.sh.
     risk = load_yaml(os.path.join(BASE_DIR, "config", "risk_limits.yaml"))
     symbols = load_yaml(os.path.join(BASE_DIR, "config", "symbols.yaml"))
-    trades = list_trades(25)
+    trades = []  # was: list_trades(25)
 
     trade_rows = ""
     for t in trades:

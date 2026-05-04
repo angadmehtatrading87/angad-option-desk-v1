@@ -1,8 +1,18 @@
+"""
+Virtual portfolio store (legacy options paper-trading layer).
+
+Kept on disk because several IG-side dashboards still query the snapshot
+shape (`virtual_account_snapshot`) for display. The actual options-trading
+logic and live option quoting (`current_unit_spread_mid` → `quote_options`)
+have been removed along with the Tastytrade integration. Callers that hit
+that path will get a deprecated marker and a None mid; the IG path never
+calls them.
+"""
+
 import os
 import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.quote_engine import quote_options
 
 DXB = ZoneInfo("Asia/Dubai")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,46 +60,11 @@ def _parse_legs(legs):
     }
 
 def current_unit_spread_mid(legs, strategy):
-    parsed = _parse_legs(legs)
-    if not parsed:
-        return None, "BAD_LEGS"
-
-    syms = [parsed["left_symbol"], parsed["right_symbol"]]
-    quotes = quote_options(syms)
-
-    def mid(q):
-        if not q:
-            return None
-        bid = q.get("bid")
-        ask = q.get("ask")
-        if bid is None or ask is None:
-            return None
-        return (float(bid) + float(ask)) / 2
-
-    lq = quotes.get(parsed["left_symbol"])
-    rq = quotes.get(parsed["right_symbol"])
-    lm = mid(lq)
-    rm = mid(rq)
-
-    if lm is None or rm is None:
-        return None, "QUOTE_MISSING"
-
-    strat = str(strategy or "").lower()
-    if strat == "debit_spread":
-        if parsed["left_action"] == "buy" and parsed["right_action"] == "sell":
-            return round(lm - rm, 4), "OK"
-        if parsed["left_action"] == "sell" and parsed["right_action"] == "buy":
-            return round(rm - lm, 4), "OK"
-
-    if strat == "put_credit_spread":
-        if parsed["left_action"] == "sell" and parsed["right_action"] == "buy":
-            return round(lm - rm, 4), "OK"
-        if parsed["left_action"] == "buy" and parsed["right_action"] == "sell":
-            return round(rm - lm, 4), "OK"
-
-    if parsed["left_action"] == "buy":
-        return round(lm - rm, 4), "OK"
-    return round(rm - lm, 4), "OK"
+    """Deprecated. Live options-spread mid pricing required the Tastytrade
+    quote feed which has been removed. Returns ``(None, "DEPRECATED")``;
+    callers in the IG path never hit this and the legacy options paths that
+    did are themselves deprecated."""
+    return None, "DEPRECATED"
 
 def log_equity(note=""):
     snap = virtual_account_snapshot()
