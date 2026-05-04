@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from app.ig_adapter import IGAdapter
 from app.ig_execution_engine import eligible_decisions, run_ig_demo_execution
+from app.market_brain_execution_bridge import build_market_brain_execution_pick, market_brain_execution_config
 from app.execution_safety_guard import evaluate_execution_safety
 from app.telegram_control_room.status_provider import update_runtime
 
@@ -53,14 +54,22 @@ def main():
                 time.sleep(LOOP_SECONDS)
                 continue
 
-            pick = eligible_decisions(ig=ig, login=login)
+            mb_cfg = market_brain_execution_config()
+            pick = build_market_brain_execution_pick(ig=ig) if mb_cfg.get("enabled") else eligible_decisions(ig=ig, login=login)
             pick_reason = pick.get("reason", [])
+            bridge = pick.get("bridge", {}) if isinstance(pick, dict) else {}
+            cap_util = bridge.get("capital_utilization", {}) if isinstance(bridge, dict) else {}
             update_runtime({
                 "worker_status": "alive",
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_decision_count": len(pick.get("decisions", [])),
                 "ig_execution_worker_last_rejection_reason": ",".join([str(x) for x in pick_reason])[:500] if pick_reason else None,
                 "ig_execution_worker_status": "running" if pick.get("ok") else "inactive",
+                "market_brain_execution_enabled": bool(mb_cfg.get("enabled")),
+                "market_brain_execution_mode": mb_cfg.get("mode"),
+                "market_brain_last_trade_candidate": (pick.get("decisions") or [None])[0],
+                "market_brain_last_rejection_reason": (pick.get("skips") or [{}])[0].get("reason") if pick.get("skips") else None,
+                "capital_utilization": cap_util,
             })
 
             print(json.dumps({
@@ -81,11 +90,17 @@ def main():
                 precomputed = pick
 
             result = run_ig_demo_execution(precomputed_pick=precomputed, ig=ig, login=login)
+            executed = None
+            for row in result.get("submitted", []):
+                if str(row.get("status", "")).upper() in ("SIMULATED", "CONFIRMED_IN_BOOK", "ACCEPTED_NOT_VISIBLE_IN_BOOK"):
+                    executed = row
+                    break
             update_runtime({
                 "worker_status": "alive",
                 "last_worker_loop_time": now_dxb(),
                 "ig_execution_worker_last_run_status": "ok" if result.get("ok") else "error",
                 "last_error": None if result.get("ok") else str(result.get("reason", []))[:500],
+                "market_brain_last_executed_trade": executed,
             })
 
             print(json.dumps({
