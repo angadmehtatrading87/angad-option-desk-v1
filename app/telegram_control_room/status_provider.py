@@ -97,6 +97,12 @@ def get_status() -> dict:
         "last_trade": rt.get("last_trade_time"),
         "last_rejection": rt.get("last_rejection_reason") or rt.get("ig_execution_worker_last_rejection_reason"),
         "last_error": rt.get("last_error"),
+        "market_brain_execution_enabled": rt.get("market_brain_execution_enabled", False),
+        "market_brain_execution_mode": rt.get("market_brain_execution_mode", "demo"),
+        "market_brain_last_trade_candidate": rt.get("market_brain_last_trade_candidate"),
+        "market_brain_last_executed_trade": rt.get("market_brain_last_executed_trade"),
+        "market_brain_last_rejection_reason": rt.get("market_brain_last_rejection_reason"),
+        "capital_utilization": rt.get("capital_utilization", {}),
     }
 
 

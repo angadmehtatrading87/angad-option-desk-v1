@@ -24,6 +24,7 @@ def test_status_present_runtime_state(monkeypatch, tmp_path):
     assert out["state"] == "ok"
     assert out["worker"] == "alive"
     assert out["ig_worker"] == "active"
+    assert out["market_brain_execution_enabled"] is False
 
 
 def test_service_status_parsing_active_and_unavailable(monkeypatch):
