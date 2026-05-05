@@ -31,7 +31,33 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
     if not cfg["mode_allowed"]:
         return {"ok": False, "reason": [cfg["blocked_reason"]], "decisions": [], "skips": [], "bridge": {"config": cfg}}
 
-    snap_adapter = MarketBrainIGAdapter(snapshot=None)
+    # Fetch the cached IG snapshot. The previous version of this function
+    # passed `snapshot=None` which made every call into the adapter blow up
+    # with AttributeError on the first attribute access. If no snapshot is
+    # available (IG offline / login timing out), bail cleanly here so the
+    # worker logs a real reason instead of an exception traceback.
+    try:
+        from app.ig_api_governor import get_ig_cached_snapshot
+        snapshot = get_ig_cached_snapshot(force_refresh=False) or {}
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": [f"snapshot_fetch_error:{type(e).__name__}"],
+            "decisions": [],
+            "skips": [],
+            "bridge": {"config": cfg},
+        }
+
+    if not snapshot or snapshot.get("ok") is False:
+        return {
+            "ok": False,
+            "reason": ["snapshot_unavailable"],
+            "decisions": [],
+            "skips": [],
+            "bridge": {"config": cfg, "snapshot_status": snapshot.get("cache_status") if isinstance(snapshot, dict) else None},
+        }
+
+    snap_adapter = MarketBrainIGAdapter(snapshot=snapshot)
     watchlist = snap_adapter.get_watchlist() or []
     account = snap_adapter.get_account() or {}
     positions = snap_adapter.get_positions() or []
