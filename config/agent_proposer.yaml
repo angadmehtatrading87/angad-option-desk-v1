@@ -1,0 +1,56 @@
+# Daily code-proposer config.
+
+# Anthropic model to use. Sonnet is the right balance of cost vs reasoning.
+model: claude-sonnet-4-6
+
+# Hard caps per single proposal call. The cost-cap meter is a separate
+# additional safety net that operates daily-cumulative; these are per-call.
+max_input_tokens: 60000        # input/state pack
+max_output_tokens: 4000        # generated diff + rationale
+max_diff_lines: 200            # if Claude returns a bigger diff, we discard it
+
+# How often the proposer fires. The systemd unit runs continuously and the
+# worker checks the schedule internally.
+fire_at_dubai_hours: [2]       # 02:00 Dubai every day
+fire_at_dubai_minutes: [0]
+
+# Files the proposer is forbidden from suggesting changes to. If the diff
+# touches any of these, the proposal is rejected without sending.
+forbidden_paths:
+  - .env
+  - config/ig_config.json
+  - app/cost_cap_meter.py
+  - app/ig_adapter.py            # to prevent self-locking out of IG
+  - data/                        # all data files
+  - cleanup/remove_tastytrade.sh
+  - cleanup/PHASE4_SELF_IMPROVING_AGENT.md
+  - config/agent_proposer.yaml   # cannot modify its own config
+
+# Files the proposer is encouraged to focus on (preferred but not enforced).
+preferred_paths:
+  - app/market_brain/
+  - app/agent_v2_orchestrator.py
+  - app/market_brain_execution_bridge.py
+  - app/ig_decision_engine.py
+  - app/ig_smart_trade_brain.py
+  - config/risk_limits.yaml
+  - config/scanner.yaml
+
+# State window: how much recent history to feed Claude.
+state_window:
+  trade_log_limit: 100
+  journalctl_lines: 80
+  recent_skips: 50
+  recent_decisions: 20
+
+# Output destinations. v1 delivers via Telegram only; v2 will additionally
+# create a PR.
+delivery:
+  telegram: true
+  github_pr: false               # flip to true in v2
+
+# Telegram tone control: how the message is formatted.
+telegram_format:
+  include_full_diff: true
+  truncate_diff_above_lines: 80
+  include_rationale: true

@@ -1,0 +1,16 @@
+[Unit]
+Description=Angad Daily Code Proposer (LLM self-improvement v1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/angad-option-desk-v1
+EnvironmentFile=-/etc/angad-option-desk.env
+ExecStart=/home/ubuntu/angad-option-desk-v1/venv/bin/python -m app.agent_ops.daily_worker
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
