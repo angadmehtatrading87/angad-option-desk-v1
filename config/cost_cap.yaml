@@ -1,0 +1,45 @@
+# Daily usage caps. The cost_cap_meter rolls counters at 00:00 Dubai time.
+#
+# Hitting `warn_at_pct` of any cap fires a one-time-per-day Telegram warning.
+# Hitting `kill_at_pct` triggers the kill action defined per-category below.
+
+caps:
+  # IG REST API budget. IG enforces ~60 non-trading requests/min and a
+  # weekly historical-price quota; the daily ceiling is a soft limit so we
+  # see runaway loops before they hit IG's hard limits.
+  ig_api_calls_per_day: 5000
+
+  # Anthropic / OpenAI token budget across all agent_ops + LLM-driven
+  # decision calls. Keep this CONSERVATIVE — easy to overshoot.
+  llm_tokens_per_day: 200000
+
+  # USD ceiling on LLM spend. Either tokens or USD tripping kills LLM calls.
+  llm_usd_per_day: 5.00
+
+  # Trading caps (defence in depth on top of risk_limits.yaml). These are
+  # counters, not P&L. Used to detect runaway loops.
+  ig_orders_submitted_per_day: 80
+  ig_position_opens_per_day: 40
+
+alerts:
+  warn_at_pct: 80
+  warn_again_at_pct: 95
+  kill_at_pct: 100
+
+# What happens when each cap is breached. `kill: true` flips the matching
+# kill-switch; `alert_only: true` only pings Telegram.
+on_breach:
+  ig_api_calls:
+    alert_only: true            # never silently halt the bot due to IG cap
+  llm_tokens:
+    kill_llm_calls: true        # disable agent_ops LLM analysis
+    alert_only: false
+  llm_usd:
+    kill_llm_calls: true
+    alert_only: false
+  ig_orders_submitted:
+    kill_trading: true          # flip ig_kill_switch
+    alert_only: false
+  ig_position_opens:
+    kill_trading: true
+    alert_only: false

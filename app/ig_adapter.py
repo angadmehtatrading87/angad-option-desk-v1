@@ -7,6 +7,15 @@ import requests
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(BASE_DIR, "config", "ig_config.json")
 
+
+def _meter_record(category: str, amount: float = 1.0) -> None:
+    """Best-effort cost-cap counter increment. Never blocks the request."""
+    try:
+        from app.cost_cap_meter import record
+        record(category, amount)
+    except Exception:
+        pass
+
 class IGAdapter:
     def __init__(self):
         with open(CFG_PATH, "r") as f:
@@ -122,6 +131,7 @@ class IGAdapter:
         return {"ok": r.ok, "status_code": r.status_code, "body": body}
 
     def positions(self) -> Dict[str, Any]:
+        _meter_record("ig_api_calls")
         r = requests.get(
             f"{self.base_url}/positions",
             headers=self._headers(auth=True, version="2"),
@@ -134,6 +144,7 @@ class IGAdapter:
         return {"ok": r.ok, "status_code": r.status_code, "body": body}
 
     def market(self, epic: str) -> Dict[str, Any]:
+        _meter_record("ig_api_calls")
         r = requests.get(
             f"{self.base_url}/markets/{epic}",
             headers=self._headers(auth=True, version="3"),
@@ -158,6 +169,7 @@ class IGAdapter:
     }
 
     def prices(self, epic: str, resolution: str = "5m", max_points: int = 30) -> Dict[str, Any]:
+        _meter_record("ig_api_calls")
         """
         Fetch historical OHLC candles for an epic at a given resolution.
 
@@ -217,6 +229,20 @@ class IGAdapter:
         currency_code: str = "USD",
         expiry: str = "-"
     ) -> Dict[str, Any]:
+        # Cost cap: trading-killed flips when ig_orders_submitted_per_day cap
+        # is breached. Refuse to submit further orders until next-day rollover.
+        try:
+            from app.cost_cap_meter import is_killed
+            if is_killed("trading_killed"):
+                return {
+                    "ok": False,
+                    "status_code": 0,
+                    "body": {"error": "blocked_by_cost_cap", "reason": "trading_killed"},
+                }
+        except Exception:
+            pass
+        _meter_record("ig_api_calls")
+        _meter_record("ig_orders_submitted")
         payload = {
             "epic": epic,
             "expiry": expiry,
