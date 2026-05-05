@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.ig_api_governor import get_ig_cached_snapshot
+from app.ig_candle_engine import build_mtf_features, DEFAULT_RESOLUTIONS
 from app.market_regime_engine import classify_market_regime
 from app.multi_timeframe_structure_engine import infer_structure_view
 from app.deployment_doctrine_engine import build_deployment_doctrine
@@ -39,7 +40,14 @@ def _safe_float(v, default=0.0):
         return default
 
 
-def _build_simple_tf_data(body: dict) -> dict:
+def _build_degraded_tf_data(body: dict) -> dict:
+    """Fallback when real candles are unavailable (e.g. weekend, IG offline,
+    rate-limited). Synthesizes a single-resolution-equivalent read from the
+    snapshot's `percentageChange` / high / low fields and stamps every
+    resolution with `_degraded=True` so downstream knows not to trust this.
+
+    This is the OLD behaviour — we keep it only as a safety net. Real MTF
+    decisions go through `_build_real_tf_data` below."""
     snap = body.get("snapshot") or {}
     bid = _safe_float(snap.get("bid"))
     offer = _safe_float(snap.get("offer"))
@@ -48,61 +56,54 @@ def _build_simple_tf_data(body: dict) -> dict:
     high = _safe_float(snap.get("high"))
     low = _safe_float(snap.get("low"))
 
-    slope_5m = pct / 3.0
-    slope_15m = pct / 2.0
-    slope_1h = pct
-    slope_4h = pct * 1.15
-
     trend = 1 if pct > 0 else -1 if pct < 0 else 0
     breakout = abs(pct) > 0.20
     hhhl = pct > 0.10
     lllh = pct < -0.10
-
     support = low if low > 0 else None
     resistance = high if high > 0 else None
 
-    return {
-        "5m": {
-            "trend": trend,
-            "slope": slope_5m,
-            "hhhl": hhhl,
-            "lllh": lllh,
-            "breakout": breakout,
-            "last_price": mid,
-            "support": support,
-            "resistance": resistance,
-        },
-        "15m": {
-            "trend": trend,
-            "slope": slope_15m,
-            "hhhl": hhhl,
-            "lllh": lllh,
-            "breakout": breakout,
-            "last_price": mid,
-            "support": support,
-            "resistance": resistance,
-        },
-        "1h": {
-            "trend": trend,
-            "slope": slope_1h,
-            "hhhl": hhhl,
-            "lllh": lllh,
-            "breakout": breakout,
-            "last_price": mid,
-            "support": support,
-            "resistance": resistance,
-        },
-        "4h": {
-            "trend": trend,
-            "slope": slope_4h,
-            "hhhl": hhhl,
-            "lllh": lllh,
-            "breakout": breakout,
-            "last_price": mid,
-            "support": support,
-            "resistance": resistance,
-        },
+    base = {
+        "trend": trend,
+        "hhhl": hhhl,
+        "lllh": lllh,
+        "breakout": breakout,
+        "last_price": mid,
+        "support": support,
+        "resistance": resistance,
+        "_degraded": True,
+        "available": False,
     }
+    return {
+        "5m":  {**base, "slope": pct / 3.0},
+        "15m": {**base, "slope": pct / 2.0},
+        "1h":  {**base, "slope": pct},
+        "4h":  {**base, "slope": pct * 1.15},
+    }
+
+
+def _build_real_tf_data(epic: str, body: dict) -> dict:
+    """Pull real OHLC candles per resolution from IG and derive features.
+    Falls back to the degraded reader if every resolution failed to fetch."""
+    feats = build_mtf_features(epic=epic, resolutions=DEFAULT_RESOLUTIONS, max_points=30)
+    meta = feats.pop("_meta", {})
+    available = meta.get("available_count", 0)
+
+    # If at least 2 of the 4 resolutions returned usable data, we trust it.
+    # Below that, fall back to the degraded synthesis so the orchestrator
+    # doesn't hallucinate confidence.
+    if available >= 2:
+        feats["_degraded"] = False
+        feats["_meta"] = meta
+        return feats
+
+    degraded = _build_degraded_tf_data(body)
+    degraded["_meta"] = {
+        **meta,
+        "fallback_reason": "insufficient_real_candles",
+        "real_available_count": available,
+    }
+    return degraded
 
 
 def _estimate_persistence_score(watchlist: list[dict]) -> float:
@@ -238,13 +239,27 @@ def build_agent_v2_plan():
 
     mtf_slopes = {}
     structures = {}
+    mtf_diagnostics: dict[str, dict] = {}
     for m in watchlist:
         epic = m.get("epic")
         body = ((m.get("snapshot") or {}).get("body") or {})
-        tf_data = _build_simple_tf_data(body)
+        tf_data = _build_real_tf_data(epic=epic, body=body)
+        # Strip _meta before handing to structure engine; record it separately.
+        tf_meta = tf_data.pop("_meta", {})
+        is_degraded = bool(tf_data.get("_degraded"))
+        # `_degraded` is per-resolution; structure engine ignores unknown keys.
         sv = infer_structure_view(tf_data)
         structures[epic] = sv.to_dict()
+        # If the read was degraded, deliberately weaken downstream conviction
+        # by halving the strength so the orchestrator doesn't size up on a
+        # weak signal it can't verify.
+        if is_degraded:
+            structures[epic]["strength"] = float(structures[epic].get("strength", 0.0)) / 2.0
+            structures[epic]["notes"] = list(structures[epic].get("notes", [])) + [
+                "Degraded MTF read — real candles unavailable; conviction halved.",
+            ]
         mtf_slopes[epic] = _safe_float(tf_data.get("1h", {}).get("slope"))
+        mtf_diagnostics[epic] = {"degraded": is_degraded, **tf_meta}
 
     regime = classify_market_regime(
         mtf_slopes=mtf_slopes,
@@ -412,4 +427,5 @@ def build_agent_v2_plan():
         "edge_memory": edge_memory,
         "ranked": ranked,
         "candidates": final_candidates,
+        "mtf_diagnostics": mtf_diagnostics,
     }
