@@ -157,6 +157,26 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
         "under_utilization_reason": "no_high_conviction_candidates" if not decisions else "",
     }
 
+    # Shadow-trade record: log what we WOULD have done at looser thresholds,
+    # in parallel to the live decision flow. Best-effort; never blocks live
+    # trading.
+    try:
+        from app.shadow_trade_collector import record_shadow
+        record_shadow(
+            opportunities=[
+                {
+                    "epic": o.epic,
+                    "direction": o.direction,
+                    "opportunity_score": float(o.opportunity_score or 0.0),
+                    "confidence_score": float(o.confidence_score or 0.0),
+                }
+                for o in (out.opportunities or [])
+            ],
+            live_decisions=decisions,
+        )
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "reason": [],

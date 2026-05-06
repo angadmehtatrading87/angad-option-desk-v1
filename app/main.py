@@ -24,6 +24,9 @@ from app.trading_window import trading_window_status
 from app.news_macro import latest_news_macro
 from app.fx_history import latest_fx_regime, fetch_fx_history
 
+# Phase 3 v1: live IG-clone dashboard at /live
+from app.ui.live_dashboard import router as live_dashboard_router
+
 
 def status_pill_class(status):
     s = (status or "").upper()
@@ -35,6 +38,7 @@ def status_pill_class(status):
 
 
 app = FastAPI(title="Autobot Trader Pro — IG")
+app.include_router(live_dashboard_router)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
