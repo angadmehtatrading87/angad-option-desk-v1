@@ -244,10 +244,12 @@ def build_agent_v2_plan():
         epic = m.get("epic")
         body = ((m.get("snapshot") or {}).get("body") or {})
         tf_data = _build_real_tf_data(epic=epic, body=body)
-        # Strip _meta before handing to structure engine; record it separately.
+        # Strip both `_meta` (a dict) and `_degraded` (a bool) before
+        # handing to structure engine — the engine iterates tf_data.items()
+        # and calls `.get(...)` on every value, so a top-level bool causes
+        # `'bool' object has no attribute 'get'`. Pop, don't get.
         tf_meta = tf_data.pop("_meta", {})
-        is_degraded = bool(tf_data.get("_degraded"))
-        # `_degraded` is per-resolution; structure engine ignores unknown keys.
+        is_degraded = bool(tf_data.pop("_degraded", False))
         sv = infer_structure_view(tf_data)
         structures[epic] = sv.to_dict()
         # If the read was degraded, deliberately weaken downstream conviction
