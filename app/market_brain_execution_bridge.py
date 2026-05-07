@@ -16,22 +16,73 @@ def market_brain_execution_config() -> dict[str, Any]:
     mode = str(os.getenv("MARKET_BRAIN_EXECUTION_MODE", "demo")).strip().lower()
     enabled = _env_bool("MARKET_BRAIN_EXECUTION_ENABLED", False)
     mode_allowed = mode in ("demo", "simulation")
+    try:
+        high_threshold = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "65.0"))
+    except Exception:
+        high_threshold = 65.0
+    try:
+        confidence_threshold = float(os.getenv("MARKET_BRAIN_CONFIDENCE_THRESHOLD", "60.0"))
+    except Exception:
+        confidence_threshold = 60.0
+    try:
+        rr_threshold = float(os.getenv("MARKET_BRAIN_RR_THRESHOLD", "1.3"))
+    except Exception:
+        rr_threshold = 1.3
     return {
         "enabled": enabled,
         "mode": mode,
         "mode_allowed": mode_allowed,
         "blocked_reason": None if mode_allowed else "market_brain_mode_must_be_demo_or_simulation",
+        "high_threshold": high_threshold,
+        "confidence_threshold": confidence_threshold,
+        "rr_threshold": rr_threshold,
     }
 
 
-def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, confidence_threshold: float = 72.0) -> dict[str, Any]:
+def build_market_brain_execution_pick(ig=None, high_threshold: float | None = None, confidence_threshold: float | None = None) -> dict[str, Any]:
     cfg = market_brain_execution_config()
     if not cfg["enabled"]:
         return {"ok": False, "reason": ["market_brain_execution_disabled"], "decisions": [], "skips": [], "bridge": {"config": cfg}}
     if not cfg["mode_allowed"]:
         return {"ok": False, "reason": [cfg["blocked_reason"]], "decisions": [], "skips": [], "bridge": {"config": cfg}}
 
-    snap_adapter = MarketBrainIGAdapter(snapshot=None)
+    if high_threshold is None:
+        high_threshold = cfg["high_threshold"]
+    if confidence_threshold is None:
+        confidence_threshold = cfg["confidence_threshold"]
+    rr_threshold = cfg["rr_threshold"]
+
+    snapshot_status = None
+    if ig is None:
+        # Prefer the live cached snapshot in production, but fall back cleanly
+        # when the cache is unavailable so unit tests and degraded shadow-mode
+        # runs do not fail before strategy logic is exercised.
+        try:
+            from app.ig_api_governor import get_ig_cached_snapshot
+            snapshot = get_ig_cached_snapshot(force_refresh=False) or {}
+        except Exception as e:
+            return {
+                "ok": False,
+                "reason": [f"snapshot_fetch_error:{type(e).__name__}"],
+                "decisions": [],
+                "skips": [],
+                "bridge": {"config": cfg},
+            }
+
+        if snapshot and snapshot.get("ok") is not False:
+            snap_adapter = MarketBrainIGAdapter(snapshot=snapshot)
+            snapshot_status = snapshot.get("cache_status") if isinstance(snapshot, dict) else None
+        else:
+            try:
+                snap_adapter = MarketBrainIGAdapter()
+                snapshot_status = "fallback_no_cached_snapshot"
+            except TypeError:
+                snap_adapter = MarketBrainIGAdapter(snapshot={})
+                snapshot_status = "fallback_empty_snapshot"
+    else:
+        snap_adapter = ig
+        snapshot_status = "injected_adapter"
+
     watchlist = snap_adapter.get_watchlist() or []
     account = snap_adapter.get_account() or {}
     positions = snap_adapter.get_positions() or []
@@ -46,7 +97,13 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
         "watchlist": watchlist,
     })
     if not data_health.get("ok"):
-        return {"ok": False, "reason": data_health.get("reasons", []), "decisions": [], "skips": [], "bridge": {"config": cfg, "api_health": data_health.get("api_health")}}
+        return {
+            "ok": False,
+            "reason": data_health.get("reasons", []),
+            "decisions": [],
+            "skips": [],
+            "bridge": {"config": cfg, "api_health": data_health.get("api_health"), "snapshot_status": snapshot_status},
+        }
 
     total_cap = float(out.capital.total_capital or 0.0)
     deployable = float(out.capital.deployable_capital or 0.0)
@@ -66,7 +123,7 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
             reasons.append("score_below_high_threshold")
         if float(opp.confidence_score or 0.0) < confidence_threshold:
             reasons.append("confidence_below_threshold")
-        if float(opp.rr_ratio or 0.0) < 1.5:
+        if float(opp.rr_ratio or 0.0) < rr_threshold:
             reasons.append("risk_reward_not_acceptable")
         if float(opp.friction_cost_estimate or 0.0) > 0.0025:
             reasons.append("bad_spread_friction")
@@ -143,5 +200,6 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float = 74.0, con
             "opportunity_count": len(out.opportunities),
             "rejected_count": len(out.rejected),
             "capital_note": out.capital.recommendation_note,
+            "snapshot_status": snapshot_status,
         },
     }
