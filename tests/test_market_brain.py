@@ -47,7 +47,9 @@ def test_market_brain_runs_without_legacy_options_modules():
     assert out.diagnostics.get("heartbeat") == "ok"
 
 
-def test_ig_adapter_forex_and_unavailable_candles_safe():
+def test_ig_adapter_forex_and_unavailable_candles_safe(monkeypatch):
+    import app.ig_candle_engine as _ce
+    monkeypatch.setattr(_ce, "fetch_candles", lambda *a, **kw: {"ok": False, "candles": [], "error": "test"})
     snap = {"watchlist": {"markets": sample_watch()}, "account": {"equity": 5000, "available": 5000}, "positions": {"positions": []}}
     adapter = IGAdapter(snapshot=snap)
     watchlist = adapter.get_watchlist()
