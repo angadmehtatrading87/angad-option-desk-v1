@@ -186,6 +186,13 @@ def _market_brain_allocation_multiplier(decision, sizing_plan, controls):
         return 1.2, "trend_expand"
     if score >= 65:
         return 1.0, "market_brain_passing_threshold"
+    # Allow trades whose score clears the (potentially lowered) env threshold.
+    try:
+        env_high = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "65.0"))
+    except Exception:
+        env_high = 65.0
+    if score >= env_high:
+        return 0.75, "analysis_mode_reduced_size"
     # Market brain present but score too low — suppress.
     return 0.0, "weak_or_unclear_setup"
 
