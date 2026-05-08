@@ -47,8 +47,8 @@ def _ttl_seconds(session_state=None):
     if session in ("asia", "asia_friday", "late_us", "friday_reduction"):
         return 45
     if session in ("london", "new_york", "london_friday"):
-        return 20
-    return 60
+        return 60
+    return 90
 
 def _cache_fresh(cache, ttl):
     ts = cache.get("timestamp")
@@ -76,14 +76,21 @@ def get_ig_cached_snapshot(force_refresh=False):
         login_body = login.get("body") if isinstance(login.get("body"), dict) else {}
         error_code = str(login_body.get("errorCode") or "")
 
-        if cache and error_code == "error.public-api.exceeded-api-key-allowance":
+        # For any login failure, reuse the last good snapshot rather than
+        # caching nulls — keeps the frontend populated and avoids a death
+        # spiral where a timeout overwrites good data.
+        if cache and cache.get("ok"):
             reused = dict(cache)
-            reused["ok"] = True
             reused["timestamp"] = _now().isoformat()
-            reused["cache_status"] = "HIT_LAST_GOOD_ALLOWANCE_FALLBACK"
+            reused["cache_status"] = (
+                "HIT_LAST_GOOD_ALLOWANCE_FALLBACK"
+                if error_code == "error.public-api.exceeded-api-key-allowance"
+                else "HIT_LAST_GOOD_LOGIN_FALLBACK"
+            )
             reused["session_state"] = session_state
             reused["ttl_seconds"] = ttl
-            reused["login"] = login
+            reused["login_error"] = str(login.get("error") or error_code or "login_failed")
+            _save_cache(reused)
             return reused
 
         failed_snapshot = {
@@ -96,8 +103,6 @@ def get_ig_cached_snapshot(force_refresh=False):
             "positions": {"ok": False, "positions": []},
             "account": {"ok": False}
         }
-        _save_cache(failed_snapshot)
-        return failed_snapshot
         _save_cache(failed_snapshot)
         return failed_snapshot
 
