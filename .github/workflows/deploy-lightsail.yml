@@ -76,6 +76,7 @@ jobs:
           set -euo pipefail
 
           # Write private key and restrict permissions
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           install -m 600 /dev/null ~/.ssh/deploy_key
           printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
 
