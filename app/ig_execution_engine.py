@@ -164,9 +164,9 @@ def _confidence_size_boost(confidence):
     return 1.0
 
 def _market_brain_allocation_multiplier(decision, sizing_plan, controls):
-    mb = (decision or {}).get("market_brain", {}) or {}
-    score = float(mb.get("score") or 0.0)
-    friction = float(mb.get("friction") or 0.0)
+    mb = (decision or {}).get("market_brain")  # None if key absent (V2 path)
+    score = float((mb or {}).get("score") or 0.0)
+    friction = float((mb or {}).get("friction") or 0.0)
     regime = str(((sizing_plan or {}).get("regime_state") or {}).get("regime") or "").upper()
     mode = str((sizing_plan or {}).get("deployment_mode") or "").lower()
     deployment_gap = float((controls or {}).get("deployment_gap_pct") or 0.0)
@@ -175,10 +175,18 @@ def _market_brain_allocation_multiplier(decision, sizing_plan, controls):
         return 0.35, "Capital preserved because regime quality is poor."
     if friction > 0.003:
         return 0.5, "size_reduced_high_friction"
+
+    # V2 decisions don't carry a market_brain key — let V2 conviction stand as-is.
+    if mb is None:
+        return 1.0, "v2_no_market_brain_data"
+
     if score >= 85 and deployment_gap >= 8:
         return 1.6, "high_conviction_expand"
     if score >= 75:
         return 1.2, "trend_expand"
+    if score >= 65:
+        return 1.0, "market_brain_passing_threshold"
+    # Market brain present but score too low — suppress.
     return 0.0, "weak_or_unclear_setup"
 
 def action_to_direction(action):
