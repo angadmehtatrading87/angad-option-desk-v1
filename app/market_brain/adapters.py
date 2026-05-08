@@ -38,8 +38,12 @@ class IGAdapter:
         return ((self._snap().get("watchlist") or {}).get("markets") or [])
 
     def get_candles(self, epics: list[str]) -> dict[str, list[dict[str, Any]]]:
-        # No synthetic/fabricated candles. Return unavailable data unless a real candle source is connected.
-        return {epic: [] for epic in epics}
+        from app.ig_candle_engine import fetch_candles
+        result = {}
+        for epic in epics:
+            resp = fetch_candles(epic, resolution="5m", max_points=30)
+            result[epic] = resp.get("candles", []) if resp.get("ok") else []
+        return result
 
     def get_account(self) -> dict[str, Any]:
         return self._snap().get("account") or {}
