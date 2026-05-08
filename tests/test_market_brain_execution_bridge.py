@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import app.ig_api_governor as _gov
 from app import market_brain_execution_bridge as b
+
+_FAKE_SNAPSHOT = {"ok": True, "cache_status": "test", "body": {}}
 
 
 def _out(opps, thesis, cap=None):
@@ -12,6 +15,7 @@ def _out(opps, thesis, cap=None):
 def test_high_conviction_creates_candidate(monkeypatch):
     monkeypatch.setenv("MARKET_BRAIN_EXECUTION_ENABLED", "true")
     monkeypatch.setenv("MARKET_BRAIN_EXECUTION_MODE", "demo")
+    monkeypatch.setattr(_gov, "get_ig_cached_snapshot", lambda force_refresh=False: _FAKE_SNAPSHOT)
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_watchlist", lambda self: [{"epic": "CS.D.EURUSD.CFD.IP"}])
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_account", lambda self: {"balance": 100000, "equity": 100000, "available": 80000})
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_positions", lambda self: [])
@@ -27,6 +31,7 @@ def test_high_conviction_creates_candidate(monkeypatch):
 def test_rejections_and_reserve_protection(monkeypatch):
     monkeypatch.setenv("MARKET_BRAIN_EXECUTION_ENABLED", "true")
     monkeypatch.setenv("MARKET_BRAIN_EXECUTION_MODE", "simulation")
+    monkeypatch.setattr(_gov, "get_ig_cached_snapshot", lambda force_refresh=False: _FAKE_SNAPSHOT)
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_watchlist", lambda self: [{"epic": "A"}])
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_account", lambda self: {"balance": 100000, "equity": 100000, "available": 1000})
     monkeypatch.setattr(b.MarketBrainIGAdapter, "get_positions", lambda self: [])
