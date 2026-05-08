@@ -67,61 +67,71 @@ jobs:
 
       - name: Deploy via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.LIGHTSAIL_HOST }}
-          username: ${{ secrets.LIGHTSAIL_USER }}
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          port: 22
-          command_timeout: 8m
-          script_stop: true
-          script: |
-            set -euo pipefail
+        env:
+          LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
+          LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          LIGHTSAIL_DEPLOY_PATH: ${{ secrets.LIGHTSAIL_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
 
-            DEPLOY_PATH="${{ secrets.LIGHTSAIL_DEPLOY_PATH }}"
-            cd "$DEPLOY_PATH"
+          # Write private key and restrict permissions
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
 
-            echo "==> capturing pre-deploy commit"
-            PREV_SHA=$(git rev-parse --short HEAD)
+          # Trust the host key so ssh doesn't prompt
+          ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-            echo "==> fetching latest main"
-            git fetch --prune origin
-            git checkout main
-            git reset --hard origin/main
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
 
-            NEW_SHA=$(git rev-parse --short HEAD)
-            echo "==> $PREV_SHA -> $NEW_SHA"
+          $SSH "${LIGHTSAIL_USER}@${LIGHTSAIL_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
 
-            if [[ "$PREV_SHA" == "$NEW_SHA" ]]; then
-                echo "no changes; skipping restart"
-                exit 0
-            fi
+          DEPLOY_PATH="${LIGHTSAIL_DEPLOY_PATH:-/home/ubuntu/angad-option-desk-v1}"
+          cd "$DEPLOY_PATH"
 
-            echo "==> installing requirements (only if requirements.txt changed)"
-            if git diff --name-only "$PREV_SHA" "$NEW_SHA" | grep -q '^requirements\.txt$'; then
-                if [[ -d venv ]]; then
-                    ./venv/bin/pip install -r requirements.txt
-                else
-                    pip3 install -r requirements.txt --break-system-packages || pip3 install -r requirements.txt
-                fi
-            fi
+          echo "==> capturing pre-deploy commit"
+          PREV_SHA=$(git rev-parse --short HEAD)
 
-            echo "==> compile-checking"
-            python3 -m compileall -q app/ tests/ || {
-                echo "compile failed — refusing to restart"
-                exit 1
-            }
+          echo "==> fetching latest main"
+          git fetch --prune origin
+          git checkout main
+          git reset --hard origin/main
 
-            echo "==> reloading systemd"
-            sudo /bin/systemctl daemon-reload
+          NEW_SHA=$(git rev-parse --short HEAD)
+          echo "==> $PREV_SHA -> $NEW_SHA"
 
-            echo "==> restarting workers"
-            sudo /bin/systemctl restart ig-execution-worker || true
-            sudo /bin/systemctl restart telegram-control-room || true
-            sudo /bin/systemctl restart angad-option-desk || true
-            sudo /bin/systemctl restart angad-ig-briefing || true
+          if [[ "$PREV_SHA" == "$NEW_SHA" ]]; then
+              echo "no changes; skipping restart"
+              exit 0
+          fi
 
-            echo "==> deploy finished cleanly"
+          echo "==> installing requirements (only if requirements.txt changed)"
+          if git diff --name-only "$PREV_SHA" "$NEW_SHA" | grep -q '^requirements\.txt$'; then
+              if [[ -d venv ]]; then
+                  ./venv/bin/pip install -r requirements.txt
+              else
+                  pip3 install -r requirements.txt --break-system-packages || pip3 install -r requirements.txt
+              fi
+          fi
+
+          echo "==> compile-checking"
+          python3 -m compileall -q app/ tests/ || {
+              echo "compile failed — refusing to restart"
+              exit 1
+          }
+
+          echo "==> reloading systemd"
+          sudo /bin/systemctl daemon-reload
+
+          echo "==> restarting workers"
+          sudo /bin/systemctl restart ig-execution-worker || true
+          sudo /bin/systemctl restart telegram-control-room || true
+          sudo /bin/systemctl restart angad-option-desk || true
+          sudo /bin/systemctl restart angad-ig-briefing || true
+
+          echo "==> deploy finished cleanly"
+          REMOTE
 
       - name: Notify Telegram on failure
         if: ${{ failure() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
