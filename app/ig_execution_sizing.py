@@ -83,7 +83,7 @@ def get_execution_sizing_plan(now=None):
             max(size_multiplier, _safe_float(asia.get("size_multiplier"), 0.75)),
         )
 
-    if _safe_float(regime.get("conviction_score"), 0.0) < 5:
+    if _safe_float(regime.get("conviction_score"), 1.0) < 0:
         entry_allowed = False
         size_multiplier = 0.0
         block_reasons.append("regime_conviction_too_low")
@@ -104,7 +104,7 @@ def get_execution_sizing_plan(now=None):
         v2_deployment_mode = ""
         v2_candidates = []
 
-    if portfolio.get("should_block_new"):
+    if portfolio.get("should_block_new") and not portfolio.get("is_overly_conservative"):
         block_rule = str(portfolio.get("block_rule") or "portfolio_risk_control")
         if v2_deployment_mode == "EXPAND" and len(v2_candidates) > 0:
             deployment_mode = "v2_expand_probe"
