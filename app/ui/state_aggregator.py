@@ -21,15 +21,28 @@ Returns a JSON-serializable dict:
       "kill":      {trading_killed, llm_calls_killed},
       "errors":    [...]   # any sub-fetch failures, for debug
     }
+
+The result is cached in-process for `_CACHE_TTL_SECONDS` seconds so that
+the dashboard's 5-second polling only triggers 1 real computation per 30
+seconds. Without this cache, every browser-tab open hammers IG with
+multi-timeframe candle fetches every 5 seconds (which blew through 95% of
+our daily IG API budget on 2026-05-07).
 """
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 DXB = ZoneInfo("Asia/Dubai")
+
+# Module-level cache for aggregate_live_state. Thread-safe.
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict = {"data": None, "expires_at": 0.0}
+_CACHE_TTL_SECONDS = 30.0
 
 
 def _safe(fn, default, errors: list, label: str):
@@ -51,7 +64,29 @@ def _session_label(now: datetime) -> str:
     return "Late NY / Asia open"
 
 
-def aggregate_live_state() -> dict:
+def aggregate_live_state(force_refresh: bool = False) -> dict:
+    """Returns the cached state if it's fresh (<30s old), otherwise rebuilds.
+
+    Pass `force_refresh=True` to bypass the cache (for testing). The cache
+    is shared across requests, so when 5 dashboards poll within 30s they
+    all get the same payload but only one actually hits IG.
+    """
+    if not force_refresh:
+        with _CACHE_LOCK:
+            cached = _CACHE.get("data")
+            expires_at = _CACHE.get("expires_at", 0.0)
+            if cached is not None and time.monotonic() < expires_at:
+                # Return a shallow copy stamped with cache_age so the caller
+                # can see how stale this is. Don't mutate the cached object.
+                age = round(_CACHE_TTL_SECONDS - (expires_at - time.monotonic()), 1)
+                copy = dict(cached)
+                copy["_cache"] = {"hit": True, "age_seconds": age, "ttl": _CACHE_TTL_SECONDS}
+                return copy
+
+    return _aggregate_live_state_uncached()
+
+
+def _aggregate_live_state_uncached() -> dict:
     errors: list[str] = []
     now = datetime.now(DXB)
 
@@ -82,7 +117,7 @@ def aggregate_live_state() -> dict:
     account = (plan.get("account") or ig_snap.get("account") or {}) if isinstance(plan, dict) else {}
     positions = ((ig_snap.get("positions") or {}).get("positions") or []) if isinstance(ig_snap, dict) else []
 
-    return {
+    result = {
         "ts": now.isoformat(),
         "session": _session_label(now),
         "account": {
@@ -104,4 +139,15 @@ def aggregate_live_state() -> dict:
         "shadow": shadow,
         "kill_switches": cost.get("kill_switches") if isinstance(cost, dict) else {},
         "errors": errors,
+        "_cache": {"hit": False, "age_seconds": 0.0, "ttl": _CACHE_TTL_SECONDS},
     }
+
+    # Update cache. Don't include the _cache marker in the cached payload
+    # itself — the read path stamps that fresh on each cache hit.
+    cacheable = dict(result)
+    cacheable.pop("_cache", None)
+    with _CACHE_LOCK:
+        _CACHE["data"] = cacheable
+        _CACHE["expires_at"] = time.monotonic() + _CACHE_TTL_SECONDS
+
+    return result
