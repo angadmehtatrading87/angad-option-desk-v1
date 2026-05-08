@@ -2,9 +2,9 @@
   "enabled": true,
   "demo_only": true,
   "auto_execute": true,
-  "max_concurrent_positions": 12,
+  "max_concurrent_positions": 20,
   "per_trade_risk_usd": 100,
-  "min_confidence": 60,
+  "min_confidence": 40,
   "default_stop_distance_points": {
     "CS.D.USDCHF.DBM.IP": 40,
     "CS.D.USDCAD.DBM.IP": 45,

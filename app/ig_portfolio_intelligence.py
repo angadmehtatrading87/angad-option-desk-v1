@@ -1,4 +1,15 @@
+import json
+import os
+
 from app.ig_live_book_source import get_unified_live_rows
+
+def _load_max_positions():
+    try:
+        path = os.path.join(os.path.dirname(__file__), "..", "config", "ig_risk_policy.json")
+        with open(os.path.normpath(path)) as f:
+            return int(json.load(f).get("max_concurrent_positions", 20))
+    except Exception:
+        return 20
 
 def _safe_float(v, default=0.0):
     try:
@@ -117,13 +128,14 @@ def build_portfolio_intelligence():
     block_reason = ""
     is_overly_conservative = False
 
-    if total_positions >= 10:
+    max_pos_limit = _load_max_positions()
+    if total_positions >= max_pos_limit:
         should_block_new = True
         deployment_bias = "book_full"
         size_adjustment = 0.0
         notes.append("Book too full; block new deployment.")
         block_rule = "max_open_positions"
-        block_reason = "open_positions_gte_10"
+        block_reason = f"open_positions_gte_{max_pos_limit}"
     elif not live.get("broker_snapshot_ok", False):
         should_block_new = True
         deployment_bias = "book_state_uncertain"

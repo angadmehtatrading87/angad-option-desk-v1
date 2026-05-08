@@ -83,7 +83,7 @@ def get_execution_sizing_plan(now=None):
             max(size_multiplier, _safe_float(asia.get("size_multiplier"), 0.75)),
         )
 
-    if _safe_float(regime.get("conviction_score"), 0.0) < 15:
+    if _safe_float(regime.get("conviction_score"), 0.0) < 5:
         entry_allowed = False
         size_multiplier = 0.0
         block_reasons.append("regime_conviction_too_low")
