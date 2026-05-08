@@ -54,13 +54,16 @@ def classify_regime(features:list[CandleFeatures], scans:list[MarketScanResult])
     avg_mom=sum(f.momentum for f in features)/len(features)
     avg_exp=sum(f.vol_expansion for f in features)/len(features)
     avg_liq=sum(s.liquidity_score for s in scans)/max(len(scans),1)
+    # FX pairs move ~10x less in % terms than equities/crypto, so thresholds
+    # are scaled down accordingly. avg_mom for EURUSD during London is ~0.05-0.15%.
+    # avg_exp (5m bar range as bps) is typically 3-15 for FX vs 50-200 for equities.
     label='range-bound'
     if avg_liq<35: label='liquidity-thin'
-    elif avg_exp>60 and abs(avg_mom)>0.5: label='high-volatility'
-    elif abs(avg_mom)>1.2: label='strong trend'
-    elif abs(avg_mom)>0.4: label='weak trend'
-    no_trade= label in ('liquidity-thin',) or (label=='range-bound' and avg_exp<35)
-    return RegimeSignal(label, round(min(95,max(40,50+abs(avg_mom)*10)),2), no_trade, f'avg_momentum={avg_mom:.2f}, avg_exp={avg_exp:.1f}')
+    elif avg_exp>12 and abs(avg_mom)>0.10: label='high-volatility'
+    elif abs(avg_mom)>0.25: label='strong trend'
+    elif abs(avg_mom)>0.04: label='weak trend'
+    no_trade= label in ('liquidity-thin',) or (label=='range-bound' and avg_exp<3)
+    return RegimeSignal(label, round(min(95,max(40,50+abs(avg_mom)*100)),2), no_trade, f'avg_momentum={avg_mom:.4f}, avg_exp={avg_exp:.2f}')
 
 
 def news_signal()->NewsSignal:
