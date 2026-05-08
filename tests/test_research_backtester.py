@@ -65,10 +65,12 @@ def test_bollinger_emits_long_on_lower_band_break():
 
 
 def test_ma_crossover_signals_on_clean_uptrend():
-    # First 200 bars sloping down, next 100 sloping up — clean golden cross
-    prices = [1.10 - i * 0.0001 for i in range(200)] + [0.91 + i * 0.0005 for i in range(100)]
+    # 40 bars down then 60 bars up with fast=10/slow=30: fast SMA crosses above slow.
+    # Previous version used fast=50/slow=200 with a price series that never produced
+    # an actual crossover (uptrend peaked at 0.96 while slow avg was still ~1.08).
+    prices = [1.10 - i * 0.001 for i in range(40)] + [1.065 + i * 0.003 for i in range(60)]
     bars = _make_bars(prices)
-    signals, _ = _run(MACrossover(fast=50, slow=200), bars)
+    signals, _ = _run(MACrossover(fast=10, slow=30), bars)
     long_count = sum(1 for s in signals if s.direction == "long")
     assert long_count >= 1, "MA crossover should fire at least one long signal on a golden cross"
 

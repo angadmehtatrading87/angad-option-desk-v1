@@ -44,6 +44,8 @@ name: Deploy to Lightsail
 #      for the relevant units. Add a sudoers rule:
 #        ubuntu ALL=NOPASSWD: /bin/systemctl restart ig-execution-worker, \
 #          /bin/systemctl restart telegram-control-room, \
+#          /bin/systemctl restart angad-option-desk, \
+#          /bin/systemctl restart angad-ig-briefing, \
 #          /bin/systemctl daemon-reload
 
 on:
@@ -116,6 +118,8 @@ jobs:
             echo "==> restarting workers"
             sudo /bin/systemctl restart ig-execution-worker || true
             sudo /bin/systemctl restart telegram-control-room || true
+            sudo /bin/systemctl restart angad-option-desk || true
+            sudo /bin/systemctl restart angad-ig-briefing || true
 
             echo "==> deploy finished cleanly"
 
