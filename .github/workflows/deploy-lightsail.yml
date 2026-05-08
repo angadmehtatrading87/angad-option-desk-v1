@@ -80,12 +80,16 @@ jobs:
           install -m 600 /dev/null ~/.ssh/deploy_key
           printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
 
+          # Strip any stray whitespace/newlines from secrets before use
+          HOST=$(printf '%s' "$LIGHTSAIL_HOST" | tr -d '[:space:]')
+          USER=$(printf '%s' "$LIGHTSAIL_USER" | tr -d '[:space:]')
+
           # Trust the host key so ssh doesn't prompt
-          ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
 
-          $SSH "${LIGHTSAIL_USER}@${LIGHTSAIL_HOST}" bash -s <<'REMOTE'
+          $SSH "${USER}@${HOST}" bash -s <<'REMOTE'
           set -euo pipefail
 
           DEPLOY_PATH="${LIGHTSAIL_DEPLOY_PATH:-/home/ubuntu/angad-option-desk-v1}"
