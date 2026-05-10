@@ -18,7 +18,7 @@ DB_PATH = os.path.join(BASE_DIR, "data", "trades.db")
 STATE_PATH = os.path.join(BASE_DIR, "data", "ig_smart_trade_state.json")
 DXB = ZoneInfo("Asia/Dubai")
 
-REENTRY_COOLDOWN_MINUTES = 8
+REENTRY_COOLDOWN_MINUTES = 45
 PROFIT_REDUCED_RISK_THRESHOLD_USD = 25.0
 PROFIT_HARVEST_PCT = 1.0
 
@@ -215,9 +215,12 @@ def evaluate_live_positions():
             if pnl_pts > 0:
                 desired = "TAKE_PROFIT"
                 why = "No fresh aligned signal; lock profit."
-            else:
+            elif pnl_pts < -12:
                 desired = "CLOSE_NOW"
                 why = "No aligned signal and trade not working."
+            else:
+                desired = "HOLD"
+                why = "No aligned signal but loss within tolerance; holding."
 
         managed.append({
             **p,
