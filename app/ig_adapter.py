@@ -7,6 +7,28 @@ import requests
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(BASE_DIR, "config", "ig_config.json")
 
+# Single shared session: persists cookies across calls and sends browser-like
+# headers so Akamai's bot-detection is less likely to drop the connection.
+_SESSION = requests.Session()
+_SESSION.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+})
+
+
+def _request(method: str, url: str, **kwargs) -> requests.Response:
+    """Wrapper that retries once with a longer timeout on ReadTimeout."""
+    try:
+        return getattr(_SESSION, method)(url, **kwargs)
+    except requests.exceptions.Timeout:
+        kwargs["timeout"] = 40
+        return getattr(_SESSION, method)(url, **kwargs)
+
 
 def _meter_record(category: str, amount: float = 1.0) -> None:
     """Best-effort cost-cap counter increment. Never blocks the request."""
@@ -63,11 +85,12 @@ class IGAdapter:
             "identifier": self.identifier,
             "password": self.password
         }
-        r = requests.post(
+        r = _request(
+            "post",
             f"{self.base_url}/session",
             headers=self._headers(auth=False, version="2"),
             json=payload,
-            timeout=20
+            timeout=20,
         )
 
         try:
@@ -102,10 +125,11 @@ class IGAdapter:
         return out
 
     def session(self) -> Dict[str, Any]:
-        r = requests.get(
+        r = _request(
+            "get",
             f"{self.base_url}/session",
             headers=self._headers(auth=True, version="1"),
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -118,11 +142,12 @@ class IGAdapter:
             "accountId": account_id,
             "defaultAccount": bool(default_account)
         }
-        r = requests.put(
+        r = _request(
+            "put",
             f"{self.base_url}/session",
             headers=self._headers(auth=True, version="1"),
             json=payload,
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -132,10 +157,11 @@ class IGAdapter:
 
     def positions(self) -> Dict[str, Any]:
         _meter_record("ig_api_calls")
-        r = requests.get(
+        r = _request(
+            "get",
             f"{self.base_url}/positions",
             headers=self._headers(auth=True, version="2"),
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -145,10 +171,11 @@ class IGAdapter:
 
     def market(self, epic: str) -> Dict[str, Any]:
         _meter_record("ig_api_calls")
-        r = requests.get(
+        r = _request(
+            "get",
             f"{self.base_url}/markets/{epic}",
             headers=self._headers(auth=True, version="3"),
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -187,7 +214,8 @@ class IGAdapter:
             `len(prices)`).
         """
         ig_resolution = self.PRICE_RESOLUTIONS.get(resolution, resolution)
-        r = requests.get(
+        r = _request(
+            "get",
             f"{self.base_url}/prices/{epic}",
             headers=self._headers(auth=True, version="3"),
             params={"resolution": ig_resolution, "max": int(max_points), "pageSize": 0},
@@ -258,11 +286,12 @@ class IGAdapter:
         if limit_distance is not None:
             payload["limitDistance"] = limit_distance
 
-        r = requests.post(
+        r = _request(
+            "post",
             f"{self.base_url}/positions/otc",
             headers=self._headers(auth=True, version="2"),
             json=payload,
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -271,10 +300,11 @@ class IGAdapter:
         return {"ok": r.ok, "status_code": r.status_code, "body": body}
 
     def confirm(self, deal_reference: str) -> Dict[str, Any]:
-        r = requests.get(
+        r = _request(
+            "get",
             f"{self.base_url}/confirms/{deal_reference}",
             headers=self._headers(auth=True, version="1"),
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
@@ -291,11 +321,12 @@ class IGAdapter:
             "expiry": expiry
         }
         headers = {**self._headers(auth=True, version="1"), "_method": "DELETE"}
-        r = requests.post(
+        r = _request(
+            "post",
             f"{self.base_url}/positions/otc",
             headers=headers,
             json=payload,
-            timeout=20
+            timeout=20,
         )
         try:
             body = r.json()
