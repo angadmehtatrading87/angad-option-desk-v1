@@ -101,33 +101,38 @@ def run_backtest(
     state: dict[str, Any] = {}
     open_trade: Trade | None = None
     closed_trades: list[Trade] = []
+    # Realized-only equity curve: only updated when a trade closes.
+    # We separately track unrealized for drawdown.
+    realized_equity: float = 0.0
     equity_curve: list[float] = [0.0]
+    peak_with_unrealized: float = 0.0
+    max_dd_with_unrealized: float = 0.0
 
     for bar in bars:
         signal: Signal | None = strategy.on_bar(bar, state)
 
+        # Mark-to-market unrealized for drawdown
+        if open_trade is not None:
+            if open_trade.direction == "long":
+                unreal = (bar.close - open_trade.entry_price) / pip
+            else:
+                unreal = (open_trade.entry_price - bar.close) / pip
+            current_eq = realized_equity + unreal
+        else:
+            current_eq = realized_equity
+        peak_with_unrealized = max(peak_with_unrealized, current_eq)
+        max_dd_with_unrealized = max(max_dd_with_unrealized, peak_with_unrealized - current_eq)
+
         if signal is None:
-            # Mark-to-market unrealized for drawdown tracking
-            unreal = 0.0
-            if open_trade and not open_trade.is_open():
-                pass
-            elif open_trade:
-                if open_trade.direction == "long":
-                    unreal = (bar.close - open_trade.entry_price) / pip
-                else:
-                    unreal = (open_trade.entry_price - bar.close) / pip
-            equity_curve.append(equity_curve[-1] + 0.0 + unreal - (equity_curve[-1] - (equity_curve[-2] if len(equity_curve) > 1 else equity_curve[-1])))
-            # simpler: track realized + current unrealized at each step
             continue
 
         if signal.direction in ("long", "short"):
-            # Close any opposite open trade first (flip)
-            if open_trade:
+            if open_trade is not None:
                 closed = _close_trade(open_trade, bar, pip, "flip-to-" + signal.direction)
                 closed_trades.append(closed)
+                realized_equity += float(closed.pnl_pips or 0.0)
+                equity_curve.append(realized_equity)
                 open_trade = None
-                equity_curve.append(equity_curve[-1] + closed.pnl_pips)
-            # Open new
             open_trade = Trade(
                 entry_ts=bar.ts,
                 exit_ts=None,
@@ -137,17 +142,19 @@ def run_backtest(
                 pnl_pips=None,
                 rationale_in=signal.rationale,
             )
-        elif signal.direction == "exit" and open_trade:
+        elif signal.direction == "exit" and open_trade is not None:
             closed = _close_trade(open_trade, bar, pip, signal.rationale)
             closed_trades.append(closed)
+            realized_equity += float(closed.pnl_pips or 0.0)
+            equity_curve.append(realized_equity)
             open_trade = None
-            equity_curve.append(equity_curve[-1] + closed.pnl_pips)
 
     # Close any still-open trade at the last bar so the result is final.
-    if open_trade and bars:
+    if open_trade is not None and bars:
         closed = _close_trade(open_trade, bars[-1], pip, "backtest-end-mark-out")
         closed_trades.append(closed)
-        equity_curve.append(equity_curve[-1] + closed.pnl_pips)
+        realized_equity += float(closed.pnl_pips or 0.0)
+        equity_curve.append(realized_equity)
 
     return _summarize(
         strategy_name=getattr(strategy, "name", strategy.__class__.__name__),
@@ -156,6 +163,7 @@ def run_backtest(
         bar_count=len(bars),
         trades=closed_trades,
         equity_curve=equity_curve,
+        max_dd_override=max_dd_with_unrealized,
     )
 
 
@@ -180,6 +188,7 @@ def _summarize(
     strategy_name: str, symbol: str, interval: str,
     start: datetime, end: datetime, bar_count: int,
     trades: list[Trade], equity_curve: list[float],
+    max_dd_override: float | None = None,
 ) -> BacktestResult:
     pnls = [t.pnl_pips for t in trades if t.pnl_pips is not None]
     wins = [p for p in pnls if p > 0]
@@ -202,8 +211,11 @@ def _summarize(
     else:
         sharpe = 0.0
 
-    # Max drawdown from the equity curve
-    if equity_curve:
+    # Max drawdown — prefer the unrealized-aware override since the live
+    # bot would have seen those losses on screen.
+    if max_dd_override is not None:
+        max_dd = max_dd_override
+    elif equity_curve:
         peak = equity_curve[0]
         max_dd = 0.0
         for eq in equity_curve:
@@ -213,7 +225,8 @@ def _summarize(
     else:
         max_dd = 0.0
 
-    final_equity = equity_curve[-1] if equity_curve else 0.0
+    # Final equity = sum of realized trade pnls (authoritative).
+    final_equity = sum(p for p in pnls) if pnls else 0.0
 
     return BacktestResult(
         strategy_name=strategy_name,

@@ -106,11 +106,27 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
     used = float(out.capital.current_used_capital or 0.0)
     reserve_ok = (total_cap - used) >= min_reserve
 
+    disabled_epics = {
+        e.strip()
+        for e in os.getenv("MARKET_BRAIN_DISABLED_EPICS", "").split(",")
+        if e.strip()
+    }
+
     thesis_by_epic = {t.epic: t for t in out.thesis}
     skips = []
     decisions = []
 
     for opp in out.opportunities:
+        if opp.epic in disabled_epics:
+            skips.append({
+                "epic": opp.epic,
+                "reason": "disabled_per_backtest_for_pair",
+                "score": opp.opportunity_score,
+                "confidence": opp.confidence_score,
+                "reject_category": "pair_disabled",
+            })
+            continue
+
         reasons = []
         if opp.action != "trade":
             reasons.append("weak_setup_watch_or_reject")

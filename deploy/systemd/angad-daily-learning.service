@@ -1,0 +1,16 @@
+[Unit]
+Description=Angad Daily Learning Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/angad-option-desk-v1
+EnvironmentFile=-/etc/angad-option-desk.env
+ExecStart=/home/ubuntu/angad-option-desk-v1/venv/bin/python -m app.daily_learning_worker
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

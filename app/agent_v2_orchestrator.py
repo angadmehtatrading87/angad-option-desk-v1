@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+
 from app.ig_api_governor import get_ig_cached_snapshot
 from app.ig_candle_engine import build_mtf_features, DEFAULT_RESOLUTIONS
 from app.market_regime_engine import classify_market_regime
@@ -189,6 +192,20 @@ def _portfolio_fit_score(symbol: str, positions: list[dict]) -> float:
     return max(20.0, min(100.0, fit))
 
 
+def _load_pair_edge_memory() -> dict[str, dict]:
+    """Load the persisted daily-learning output. No-op if file absent."""
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "pair_edge_memory.json",
+    )
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("by_epic") or {}
+    except Exception:
+        return {}
+
+
 def _trade_log_edge_memory(limit: int = 300) -> dict[str, dict]:
     memory: dict[str, dict] = {}
     try:
@@ -293,6 +310,7 @@ def build_agent_v2_plan():
 
     pair_edges = {}
     edge_memory = _trade_log_edge_memory(limit=300)
+    persisted_edge = _load_pair_edge_memory()
     ranked = []
     explanations = {}
     economic_candidates = []
@@ -334,6 +352,18 @@ def build_agent_v2_plan():
             pep.setdefault("notes", []).append(
                 f"edge_memory sample={int(mem.get('sample_size', 0))} win_rate={_safe_float(mem.get('win_rate')):.1f}%"
             )
+
+        # Blend persisted daily-learning win_rate as an additional size nudge.
+        # win_rate > 55 → slight upward nudge; < 45 → slight downward nudge.
+        pmem = persisted_edge.get(epic) or {}
+        if pmem and int(pmem.get("trades_30d") or 0) >= 5:
+            p_wr = _safe_float(pmem.get("win_rate"), 50.0)
+            p_nudge = max(0.7, min(1.3, 1.0 + (p_wr - 50.0) / 100.0))
+            pep["size_weight"] = round(_safe_float(pep.get("size_weight"), 1.0) * p_nudge, 2)
+            pep.setdefault("notes", []).append(
+                f"daily_learning trades={pmem['trades_30d']} win_rate={p_wr:.1f}% last={pmem.get('last_outcome','?')}"
+            )
+
         pair_edges[symbol] = pep
 
         if not pep.get("enabled", True):
