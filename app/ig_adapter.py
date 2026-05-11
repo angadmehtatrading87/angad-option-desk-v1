@@ -1,5 +1,8 @@
 import json
 import os
+import random
+import time
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 import requests
@@ -7,8 +10,8 @@ import requests
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(BASE_DIR, "config", "ig_config.json")
 
-# Single shared session: persists cookies across calls and sends browser-like
-# headers so Akamai's bot-detection is less likely to drop the connection.
+# Single shared session with browser-like headers — persists cookies and looks
+# like a real Chrome browser to Akamai edge nodes.
 _SESSION = requests.Session()
 _SESSION.headers.update({
     "User-Agent": (
@@ -16,9 +19,47 @@ _SESSION.headers.update({
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     ),
+    "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://deal.ig.com",
+    "Referer": "https://deal.ig.com/",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
 })
+
+# Module-level session token store so tokens survive across IGAdapter instances.
+# IG session tokens last ~10 min of inactivity; we treat them as valid for 8 min.
+_CST: Optional[str] = None
+_XSEC: Optional[str] = None
+_SESSION_LOGIN_TS: Optional[datetime] = None
+_SESSION_MAX_AGE = timedelta(minutes=8)
+
+
+def _session_tokens_valid() -> bool:
+    if not _CST or not _XSEC or not _SESSION_LOGIN_TS:
+        return False
+    return datetime.utcnow() < _SESSION_LOGIN_TS + _SESSION_MAX_AGE
+
+
+def _store_tokens(cst: str, xsec: str) -> None:
+    global _CST, _XSEC, _SESSION_LOGIN_TS
+    _CST = cst
+    _XSEC = xsec
+    _SESSION_LOGIN_TS = datetime.utcnow()
+
+
+def _clear_tokens() -> None:
+    global _CST, _XSEC, _SESSION_LOGIN_TS
+    _CST = None
+    _XSEC = None
+    _SESSION_LOGIN_TS = None
+
+
+def _think(lo: float = 0.4, hi: float = 1.8) -> None:
+    """Random human-like pause between API calls."""
+    time.sleep(random.uniform(lo, hi))
 
 
 def _request(method: str, url: str, **kwargs) -> requests.Response:
@@ -50,8 +91,9 @@ class IGAdapter:
         self.account_id = self.cfg.get("account_id", "")
         self.enabled = bool(self.cfg.get("enabled", False))
 
-        self.cst: Optional[str] = None
-        self.x_security_token: Optional[str] = None
+        # Restore persisted tokens so we don't re-login on every instantiation.
+        self.cst: Optional[str] = _CST
+        self.x_security_token: Optional[str] = _XSEC
 
     def _headers(self, auth: bool = False, version: str = "2") -> Dict[str, str]:
         headers = {
@@ -81,6 +123,21 @@ class IGAdapter:
         if not self.enabled:
             return {"ok": False, "error": "IG disabled in config"}
 
+        # Reuse existing session if tokens are still fresh — avoids hammering
+        # the login endpoint (a key bot-detection signal).
+        if _session_tokens_valid():
+            self.cst = _CST
+            self.x_security_token = _XSEC
+            return {
+                "ok": True,
+                "cache_status": "session_reused",
+                "has_cst": True,
+                "has_x_security_token": True,
+                "cst": self.cst,
+                "x_security_token": self.x_security_token,
+                "body": {},
+            }
+
         payload = {
             "identifier": self.identifier,
             "password": self.password
@@ -107,21 +164,26 @@ class IGAdapter:
         if r.ok:
             self.cst = r.headers.get("CST")
             self.x_security_token = r.headers.get("X-SECURITY-TOKEN")
+            _store_tokens(self.cst or "", self.x_security_token or "")
             out["has_cst"] = bool(self.cst)
             out["has_x_security_token"] = bool(self.x_security_token)
             out["cst"] = self.cst
             out["x_security_token"] = self.x_security_token
- 
+
             # force-switch to configured account if needed
             if self.account_id:
                 current = (body or {}).get("currentAccountId")
                 if current != self.account_id:
+                    _think(1.0, 2.5)
                     switch = self.switch_account(self.account_id)
                     out["switch_account"] = switch
                     if switch.get("ok"):
-                        # refresh session snapshot after switch
+                        _think(0.8, 1.8)
                         sess = self.session()
                         out["post_switch_session"] = sess
+        else:
+            # Clear stale tokens so next cycle forces a fresh login attempt.
+            _clear_tokens()
         return out
 
     def session(self) -> Dict[str, Any]:
@@ -157,12 +219,15 @@ class IGAdapter:
 
     def positions(self) -> Dict[str, Any]:
         _meter_record("ig_api_calls")
+        _think(0.5, 1.5)
         r = _request(
             "get",
             f"{self.base_url}/positions",
             headers=self._headers(auth=True, version="2"),
             timeout=20,
         )
+        if r.status_code in (401, 403):
+            _clear_tokens()
         try:
             body = r.json()
         except Exception:

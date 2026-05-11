@@ -1,4 +1,5 @@
 import json
+import random
 import time
 import traceback
 from datetime import datetime
@@ -12,7 +13,15 @@ from app.execution_safety_guard import evaluate_execution_safety
 from app.telegram_control_room.status_provider import update_runtime
 
 DXB = ZoneInfo("Asia/Dubai")
-LOOP_SECONDS = 30
+# Base loop interval. Each cycle adds ±30% human jitter so the request cadence
+# is never perfectly regular — a key bot-detection signal.
+LOOP_SECONDS = 45
+
+
+def _jitter_sleep(base: float = LOOP_SECONDS) -> None:
+    """Sleep for base ± 30% so the cycle interval looks human."""
+    secs = base * random.uniform(0.7, 1.3)
+    time.sleep(secs)
 
 def now_dxb():
     return datetime.now(DXB).isoformat()
@@ -40,7 +49,7 @@ def main():
                     "stage": "login",
                     "reason": "ig_login_failed"
                 }))
-                time.sleep(LOOP_SECONDS)
+                _jitter_sleep()
                 continue
 
             safety = evaluate_execution_safety(channel="ig_execution_worker", expected_order_count=1)
@@ -54,7 +63,7 @@ def main():
                     "ig_execution_worker_status": "inactive",
                 })
                 print(json.dumps({"ts": now_dxb(), "worker": "ig_execution", "stage": "safety", "ok": False, "reason": safety.get("reasons", [])}, default=str))
-                time.sleep(LOOP_SECONDS)
+                _jitter_sleep()
                 continue
 
             mb_cfg = market_brain_execution_config()
@@ -127,7 +136,7 @@ def main():
             }, default=str))
 
             consecutive_api_timeouts = 0
-            time.sleep(LOOP_SECONDS)
+            _jitter_sleep()
 
         except requests.exceptions.Timeout as e:
             consecutive_api_timeouts += 1
@@ -175,7 +184,7 @@ def main():
                 "error": str(e),
                 "traceback": error_trace,
             }))
-            time.sleep(LOOP_SECONDS)
+            _jitter_sleep()
 
 if __name__ == "__main__":
     main()
