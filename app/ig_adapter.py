@@ -35,6 +35,7 @@ _CST: Optional[str] = None
 _XSEC: Optional[str] = None
 _SESSION_LOGIN_TS: Optional[datetime] = None
 _SESSION_MAX_AGE = timedelta(minutes=8)
+_CURRENT_ACCOUNT_ID: Optional[str] = None
 
 
 def _session_tokens_valid() -> bool:
@@ -50,11 +51,17 @@ def _store_tokens(cst: str, xsec: str) -> None:
     _SESSION_LOGIN_TS = datetime.utcnow()
 
 
+def _set_account_id(account_id: str) -> None:
+    global _CURRENT_ACCOUNT_ID
+    _CURRENT_ACCOUNT_ID = account_id
+
+
 def _clear_tokens() -> None:
-    global _CST, _XSEC, _SESSION_LOGIN_TS
+    global _CST, _XSEC, _SESSION_LOGIN_TS, _CURRENT_ACCOUNT_ID
     _CST = None
     _XSEC = None
     _SESSION_LOGIN_TS = None
+    _CURRENT_ACCOUNT_ID = None
 
 
 def _think(lo: float = 0.4, hi: float = 1.8) -> None:
@@ -135,7 +142,9 @@ class IGAdapter:
                 "has_x_security_token": True,
                 "cst": self.cst,
                 "x_security_token": self.x_security_token,
-                "body": {},
+                # Include cached account ID so _ensure_account doesn't re-switch
+                # every cycle (which burns the IG rate limit budget).
+                "body": {"currentAccountId": _CURRENT_ACCOUNT_ID or self.account_id},
             }
 
         payload = {
@@ -181,6 +190,9 @@ class IGAdapter:
                         _think(0.8, 1.8)
                         sess = self.session()
                         out["post_switch_session"] = sess
+                        _set_account_id(self.account_id)
+                else:
+                    _set_account_id(current or "")
         else:
             # Clear stale tokens so next cycle forces a fresh login attempt.
             _clear_tokens()
