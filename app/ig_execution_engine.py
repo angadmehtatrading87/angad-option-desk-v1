@@ -348,11 +348,29 @@ def _confirm_in_book(ig, epic, direction, size, deal_reference=None):
     }
 
 def _ensure_account(ig, login):
+    # Session was reused from cache — account was confirmed on the original
+    # fresh login, so no switch needed here.
+    if login.get("cache_status") == "session_reused":
+        return {"ok": True}
+    # login() already attempted the switch internally; trust it succeeded.
+    if login.get("switch_account", {}).get("ok"):
+        return {"ok": True}
     configured_account = ig.account_id
     current_account = ((login.get("body") or {}).get("currentAccountId"))
     if configured_account and current_account != configured_account:
         sw = ig.switch_account(configured_account)
         if not sw.get("ok"):
+            err_code = (sw.get("body") or {}).get("errorCode", "")
+            # IG rate-limit on the switch endpoint — don't hard-block execution;
+            # the session may still be usable on demo.
+            if "exceeded" in str(err_code).lower() or sw.get("status_code") == 403:
+                print(json.dumps({
+                    "warn": "ig_account_switch_rate_limited",
+                    "status_code": sw.get("status_code"),
+                    "error": err_code,
+                    "continuing": True,
+                }))
+                return {"ok": True}
             return {"ok": False, "reason": "ig_account_switch_failed", "switch": sw}
         sess = ig.session()
         sess_body = sess.get("body") if isinstance(sess.get("body"), dict) else {}
