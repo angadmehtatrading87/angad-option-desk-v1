@@ -16,22 +16,21 @@ def market_brain_execution_config() -> dict[str, Any]:
     mode = str(os.getenv("MARKET_BRAIN_EXECUTION_MODE", "demo")).strip().lower()
     enabled = _env_bool("MARKET_BRAIN_EXECUTION_ENABLED", False)
     mode_allowed = mode in ("demo", "simulation")
-    # Thresholds are env-configurable so we can tune them without a redeploy.
-    # Demo-phase defaults are intentionally looser than the strict 74/72 we
-    # ship as production-grade, so the bot generates trade data we can learn
-    # from. Tighten back up before going live with real capital.
+    data_collection_mode = _env_bool("MARKET_BRAIN_DATA_COLLECTION_MODE", False)
+    # In data-collection mode we maximise trade frequency to gather data.
+    # All discipline filters are bypassed — tighten before real capital.
     try:
-        high_threshold = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "65.0"))
+        high_threshold = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "40.0" if data_collection_mode else "65.0"))
     except Exception:
-        high_threshold = 65.0
+        high_threshold = 40.0 if data_collection_mode else 65.0
     try:
-        confidence_threshold = float(os.getenv("MARKET_BRAIN_CONFIDENCE_THRESHOLD", "60.0"))
+        confidence_threshold = float(os.getenv("MARKET_BRAIN_CONFIDENCE_THRESHOLD", "35.0" if data_collection_mode else "60.0"))
     except Exception:
-        confidence_threshold = 60.0
+        confidence_threshold = 35.0 if data_collection_mode else 60.0
     try:
-        rr_threshold = float(os.getenv("MARKET_BRAIN_RR_THRESHOLD", "1.3"))
+        rr_threshold = float(os.getenv("MARKET_BRAIN_RR_THRESHOLD", "0.8" if data_collection_mode else "1.3"))
     except Exception:
-        rr_threshold = 1.3
+        rr_threshold = 0.8 if data_collection_mode else 1.3
     return {
         "enabled": enabled,
         "mode": mode,
@@ -40,6 +39,7 @@ def market_brain_execution_config() -> dict[str, Any]:
         "high_threshold": high_threshold,
         "confidence_threshold": confidence_threshold,
         "rr_threshold": rr_threshold,
+        "data_collection_mode": data_collection_mode,
     }
 
 
@@ -112,6 +112,7 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
         if e.strip()
     }
 
+    data_collection_mode = cfg.get("data_collection_mode", False)
     thesis_by_epic = {t.epic: t for t in out.thesis}
     skips = []
     decisions = []
@@ -128,7 +129,9 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
             continue
 
         reasons = []
-        if opp.action != "trade":
+        # In data-collection mode: bypass regime/action veto so range-bound
+        # markets still produce trade data. Keep hard kill-switch gates only.
+        if opp.action != "trade" and not data_collection_mode:
             reasons.append("weak_setup_watch_or_reject")
         if float(opp.opportunity_score or 0.0) < high_threshold:
             reasons.append("score_below_high_threshold")
@@ -145,16 +148,20 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
         thesis_text = ""
         if thesis:
             thesis_text = f"{thesis.why_direction}; {thesis.why_now}; {thesis.structure}".strip()
-        if len(thesis_text) < 12:
+        if len(thesis_text) < 12 and not data_collection_mode:
             reasons.append("missing_trade_thesis")
 
         recommended_size = float((thesis.recommended_size if thesis else 0.0) or 0.0)
         regime_name = str((opp.regime if hasattr(opp, "regime") else "TREND") or "TREND").upper()
         alloc = capital_allocation(total_cap, used, float(opp.opportunity_score or 0.0), regime_name)
         recommended_size = max(recommended_size, float(alloc.get("recommended_notional", 0.0) or 0.0))
+        # Data-collection mode: guarantee a minimum probe size so trades
+        # always reach the IG order submission step.
+        if data_collection_mode and recommended_size <= 0.0:
+            recommended_size = max(5000.0, deployable * 0.02)
         min_meaningful = max(2500.0, deployable * 0.03)
         is_probe = bool((opp.components or {}).get("probe_trade", False))
-        if recommended_size < min_meaningful and not is_probe:
+        if recommended_size < min_meaningful and not is_probe and not data_collection_mode:
             reasons.append("small_trade_suppressed")
 
         if reasons:
@@ -169,13 +176,15 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
 
         action = "WATCH_LONG" if opp.direction == "long" else "WATCH_SHORT"
         conviction_tier = "very_high" if opp.opportunity_score >= 85 and opp.confidence_score >= 82 else "strong"
-        allocation_reason = f"tier={conviction_tier}; deployable={deployable:.2f}; suggested_notional={recommended_size:.2f}; objective=4-5pct_monthly"
+        dcm_note = " [DATA_COLLECTION_MODE]" if data_collection_mode and opp.action != "trade" else ""
+        allocation_reason = f"tier={conviction_tier}; deployable={deployable:.2f}; suggested_notional={recommended_size:.2f}; objective=4-5pct_monthly{dcm_note}"
         decisions.append({
             "epic": opp.epic,
             "name": opp.epic,
             "action": action,
             "reason": f"MarketBrain: {allocation_reason}",
             "confidence": float(opp.confidence_score or 0.0),
+            "data_collection_mode_override": data_collection_mode and opp.action != "trade",
             "market_brain": {
                 "thesis": thesis_text,
                 "score": float(opp.opportunity_score or 0.0),
@@ -186,6 +195,8 @@ def build_market_brain_execution_pick(ig=None, high_threshold: float | None = No
                 "recommended_size": recommended_size,
                 "recommended_size_usd": recommended_size,
                 "conviction_tier": conviction_tier,
+                "original_action": opp.action,
+                "rejection_reason": opp.rejection_reason,
             },
         })
 
