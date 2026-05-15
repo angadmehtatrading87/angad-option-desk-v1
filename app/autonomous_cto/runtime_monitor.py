@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import json
+import os
 import subprocess
 from datetime import datetime, timezone
 
-SSH_KEY = "~/Downloads/LightsailDefaultKey-eu-west-2.pem"
+# When the agent runs ON Lightsail, use local systemctl directly.
+# When running from a dev machine, SSH to the server.
+_ON_SERVER = os.path.exists("/etc/systemd/system")
+
+SSH_KEY = os.path.expanduser("~/Downloads/LightsailDefaultKey-eu-west-2.pem")
 SSH_HOST = "ubuntu@16.60.74.15"
 SSH_OPTS = ["-i", SSH_KEY, "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15"]
 
@@ -19,7 +23,15 @@ ALL_SERVICES = [
 ]
 
 
-def _ssh(cmd: str, timeout: int = 30) -> tuple[bool, str]:
+def _run_local(cmd: str, timeout: int = 30) -> tuple[bool, str]:
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except Exception as e:
+        return False, str(e)
+
+
+def _run_remote(cmd: str, timeout: int = 30) -> tuple[bool, str]:
     try:
         r = subprocess.run(
             ["ssh"] + SSH_OPTS + [SSH_HOST, cmd],
@@ -32,21 +44,25 @@ def _ssh(cmd: str, timeout: int = 30) -> tuple[bool, str]:
         return False, str(e)
 
 
+def _run(cmd: str, timeout: int = 30) -> tuple[bool, str]:
+    return _run_local(cmd, timeout) if _ON_SERVER else _run_remote(cmd, timeout)
+
+
 def check_service_health() -> dict:
     statuses: dict[str, str] = {}
     checks = " && ".join(
         f'echo "{svc}:$(systemctl is-active {svc} 2>/dev/null || echo unknown)"'
         for svc in ALL_SERVICES
     )
-    ok, output = _ssh(checks)
+    ok, output = _run(checks)
     if not ok:
         return {
             "ok": False,
             "score": 0.0,
-            "services": {s: "ssh_unreachable" for s in ALL_SERVICES},
+            "services": {s: "unreachable" for s in ALL_SERVICES},
             "degraded": ALL_SERVICES,
             "critical": CORE_SERVICES,
-            "ssh_error": output,
+            "error": output,
         }
 
     for line in output.splitlines():
@@ -85,10 +101,11 @@ def compute_health_score(service_statuses: dict[str, str]) -> float:
 
 
 def get_recent_worker_logs(service: str, lines: int = 50) -> str:
-    ok, output = _ssh(f"sudo journalctl -u {service} -n {lines} --no-pager -o cat 2>/dev/null")
+    ok, output = _run(f"journalctl -u {service} -n {lines} --no-pager -o cat 2>/dev/null")
     return output if ok else f"[log fetch failed: {output}]"
 
 
 def get_deployed_sha() -> str:
-    ok, output = _ssh("cd ~/angad-option-desk-v1 && git rev-parse --short HEAD 2>/dev/null")
+    repo = "/home/ubuntu/angad-option-desk-v1" if _ON_SERVER else "."
+    ok, output = _run(f"cd {repo} && git rev-parse --short HEAD 2>/dev/null")
     return output.strip() if ok else "unknown"
