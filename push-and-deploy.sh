@@ -56,6 +56,7 @@ ssh -i "$KEY" "$HOST" "
   sudo systemctl restart ig-execution-worker.service
   sudo systemctl restart angad-ig-briefing.service
   sudo systemctl restart angad-code-proposer.service 2>/dev/null || true
+  sudo systemctl restart autonomous-cto.service 2>/dev/null || true
   echo 'services restarted'
 "
 
