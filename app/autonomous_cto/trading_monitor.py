@@ -95,7 +95,10 @@ def get_current_positions() -> list:
     try:
         from app.ig_api_governor import get_ig_cached_snapshot
         snapshot = get_ig_cached_snapshot(force_refresh=False) or {}
-        return snapshot.get("positions") or []
+        positions_raw = snapshot.get("positions") or {}
+        if isinstance(positions_raw, dict):
+            return positions_raw.get("positions") or []
+        return positions_raw if isinstance(positions_raw, list) else []
     except Exception:
         return []
 
