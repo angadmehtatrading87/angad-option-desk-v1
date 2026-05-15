@@ -1,0 +1,21 @@
+{
+  "auto_merge_on_test_pass": true,
+  "auto_deploy_after_merge": true,
+  "require_ci_pass_before_merge": true,
+  "rollback_if_health_drops_by": 20,
+  "max_patches_per_day": 10,
+  "patch_cooldown_minutes": 30,
+  "diagnostic_interval_minutes": 15,
+  "min_health_score_to_patch": 30,
+  "max_concurrent_open_prs": 3,
+  "allowed_patch_files": ["app/", "config/"],
+  "forbidden_patch_files": [
+    "push-and-deploy.sh",
+    ".github/workflows/",
+    "deploy/systemd/",
+    "app/autonomous_cto/"
+  ],
+  "telegram_notify_on": ["deploy", "rollback", "patch_applied", "issue_detected", "daily_report"],
+  "auto_merge_high_risk": false,
+  "post_deploy_verify_delay_seconds": 60
+}
