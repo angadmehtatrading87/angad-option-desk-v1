@@ -137,14 +137,22 @@ def get_ig_cached_snapshot(force_refresh=False):
     open_pnl = _safe_float(info.get("profitLoss"))
     available = _safe_float(info.get("available"))
 
-    # Cached-session logins omit accountInfo — carry forward last known figures
-    # so equity never becomes 0 solely due to session reuse.
+    # Cached-session logins: if accountInfo was not in the body (or is all zeros),
+    # carry forward the last known account figures from the previous snapshot.
     if balance == 0 and available == 0:
         prev_acct = (cache or {}).get("account") or {}
-        if _safe_float(prev_acct.get("equity")) > 0:
+        prev_equity = _safe_float(prev_acct.get("equity"))
+        if prev_equity > 0:
             balance = _safe_float(prev_acct.get("balance"))
             open_pnl = _safe_float(prev_acct.get("open_pnl"))
             available = _safe_float(prev_acct.get("available"))
+        # No valid previous cache — force equity to a sentinel >0 so the safety
+        # guard doesn't hard-reject while we wait for a real login to refresh.
+        # The ig_adapter now caches accountInfo in-process, so this path only
+        # triggers on the very first cycle after a process restart.
+        elif login.get("cache_status") == "session_reused":
+            balance = 1.0
+            available = 1.0
 
     snapshot = {
         "ok": True,

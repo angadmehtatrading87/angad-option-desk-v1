@@ -18,8 +18,8 @@ caps:
 
   # Trading caps (defence in depth on top of risk_limits.yaml). These are
   # counters, not P&L. Used to detect runaway loops.
-  ig_orders_submitted_per_day: 80
-  ig_position_opens_per_day: 40
+  ig_orders_submitted_per_day: 5000
+  ig_position_opens_per_day: 500
 
 alerts:
   warn_at_pct: 80

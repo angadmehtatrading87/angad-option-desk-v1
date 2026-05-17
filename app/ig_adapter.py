@@ -36,6 +36,7 @@ _XSEC: Optional[str] = None
 _SESSION_LOGIN_TS: Optional[datetime] = None
 _SESSION_MAX_AGE = timedelta(minutes=8)
 _CURRENT_ACCOUNT_ID: Optional[str] = None
+_CACHED_ACCOUNT_INFO: Optional[dict] = None
 
 
 def _session_tokens_valid() -> bool:
@@ -56,12 +57,19 @@ def _set_account_id(account_id: str) -> None:
     _CURRENT_ACCOUNT_ID = account_id
 
 
+def _store_account_info(info: dict) -> None:
+    global _CACHED_ACCOUNT_INFO
+    if info and isinstance(info, dict):
+        _CACHED_ACCOUNT_INFO = info
+
+
 def _clear_tokens() -> None:
-    global _CST, _XSEC, _SESSION_LOGIN_TS, _CURRENT_ACCOUNT_ID
+    global _CST, _XSEC, _SESSION_LOGIN_TS, _CURRENT_ACCOUNT_ID, _CACHED_ACCOUNT_INFO
     _CST = None
     _XSEC = None
     _SESSION_LOGIN_TS = None
     _CURRENT_ACCOUNT_ID = None
+    _CACHED_ACCOUNT_INFO = None
 
 
 def _think(lo: float = 0.4, hi: float = 1.8) -> None:
@@ -135,6 +143,9 @@ class IGAdapter:
         if _session_tokens_valid():
             self.cst = _CST
             self.x_security_token = _XSEC
+            cached_body: dict = {"currentAccountId": _CURRENT_ACCOUNT_ID or self.account_id}
+            if _CACHED_ACCOUNT_INFO:
+                cached_body["accountInfo"] = _CACHED_ACCOUNT_INFO
             return {
                 "ok": True,
                 "cache_status": "session_reused",
@@ -142,9 +153,7 @@ class IGAdapter:
                 "has_x_security_token": True,
                 "cst": self.cst,
                 "x_security_token": self.x_security_token,
-                # Include cached account ID so _ensure_account doesn't re-switch
-                # every cycle (which burns the IG rate limit budget).
-                "body": {"currentAccountId": _CURRENT_ACCOUNT_ID or self.account_id},
+                "body": cached_body,
             }
 
         payload = {
@@ -174,6 +183,7 @@ class IGAdapter:
             self.cst = r.headers.get("CST")
             self.x_security_token = r.headers.get("X-SECURITY-TOKEN")
             _store_tokens(self.cst or "", self.x_security_token or "")
+            _store_account_info((body or {}).get("accountInfo") if isinstance(body, dict) else None)
             out["has_cst"] = bool(self.cst)
             out["has_x_security_token"] = bool(self.x_security_token)
             out["cst"] = self.cst
