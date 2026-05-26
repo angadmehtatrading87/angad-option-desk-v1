@@ -1,12 +1,30 @@
+import json
+import os
 from collections import defaultdict
 from app.ig_profit_capture_engine import build_profit_capture_decision
 from app.ig_exit_registry import record_exit_event
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_STOP_DISTANCE_CACHE = None
 
 def _safe_float(v, default=0.0):
     try:
         return float(v)
     except Exception:
         return default
+
+def _stop_distance_for(epic):
+    """Stop distance (IG points) for an epic, used to express P&L as an R-multiple."""
+    global _STOP_DISTANCE_CACHE
+    if _STOP_DISTANCE_CACHE is None:
+        try:
+            with open(os.path.join(_BASE_DIR, "config", "ig_risk_policy.json"), "r") as f:
+                policy = json.load(f)
+            _STOP_DISTANCE_CACHE = policy.get("default_stop_distance_points", {}) or {}
+        except Exception:
+            _STOP_DISTANCE_CACHE = {}
+    dist = _safe_float(_STOP_DISTANCE_CACHE.get(epic), 0.0)
+    return dist if dist > 0 else 35.0
 
 def rank_managed_positions(managed_positions, session_state=None, carry_policy=None):
     session = (session_state or {}).get("session", "")
@@ -95,15 +113,19 @@ def rank_managed_positions(managed_positions, session_state=None, carry_policy=N
             current_action = p.get("agent_action", "HOLD")
             tags = list(tags or [])
 
-            if pnl_points >= 5 and current_action not in ("CLOSE_NOW", "TAKE_PROFIT", "TAKE_PARTIAL"):
-                if pnl_points >= 12:
+            # Profit-lock expressed as an R-multiple (pnl / stop distance) so it
+            # only fires on a genuine move, not on +5 points of noise. Below 1R we
+            # leave the agent's decision (usually HOLD) and the broker TP/SL alone.
+            r_mult = pnl_points / _stop_distance_for(p.get("epic"))
+            if r_mult >= 1.0 and current_action not in ("CLOSE_NOW", "TAKE_PROFIT", "TAKE_PARTIAL"):
+                if r_mult >= 2.0:
                     p["agent_action"] = "CLOSE_NOW"
-                    p["agent_reason"] = "Locked profit after strong favorable move."
+                    p["agent_reason"] = "Locked profit after an exceptional move (>=2R)."
                     if "profit_lock_full" not in tags:
                         tags.append("profit_lock_full")
                 else:
                     p["agent_action"] = "TAKE_PARTIAL"
-                    p["agent_reason"] = "Locked profit after favorable move; reduce and reassess."
+                    p["agent_reason"] = "Reached 1R — bank a partial and let the rest run."
                     if "profit_lock_partial" not in tags:
                         tags.append("profit_lock_partial")
             ranked.append({

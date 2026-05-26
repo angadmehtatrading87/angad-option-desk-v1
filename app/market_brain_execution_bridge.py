@@ -12,6 +12,30 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+_RISK_POLICY_CACHE = None
+
+
+def _load_risk_policy() -> dict:
+    """Load config/ig_risk_policy.json once. Source of the committed profit_mode
+    switch so trading discipline can be toggled by deploy, not an SSH env edit."""
+    global _RISK_POLICY_CACHE
+    if _RISK_POLICY_CACHE is None:
+        try:
+            import json
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            with open(os.path.join(base, "config", "ig_risk_policy.json"), "r") as f:
+                _RISK_POLICY_CACHE = json.load(f) or {}
+        except Exception:
+            _RISK_POLICY_CACHE = {}
+    return _RISK_POLICY_CACHE
+
+
+def effective_high_threshold() -> float:
+    """Single source of truth for the entry/sizing score threshold, so the
+    bridge gate and the execution-engine sizing multiplier never disagree."""
+    return float(market_brain_execution_config().get("high_threshold", 65.0))
+
+
 def market_brain_execution_config() -> dict[str, Any]:
     mode = str(os.getenv("MARKET_BRAIN_EXECUTION_MODE", "demo")).strip().lower()
     enabled = _env_bool("MARKET_BRAIN_EXECUTION_ENABLED", False)
@@ -31,6 +55,21 @@ def market_brain_execution_config() -> dict[str, Any]:
         rr_threshold = float(os.getenv("MARKET_BRAIN_RR_THRESHOLD", "0.8" if data_collection_mode else "1.3"))
     except Exception:
         rr_threshold = 0.8 if data_collection_mode else 1.3
+
+    # Committed profit-mode switch (config/ig_risk_policy.json). When on, it
+    # forces discipline ON regardless of any lingering env flags on the box:
+    # data-collection (noise) mode off, and quality entry thresholds applied.
+    policy = _load_risk_policy()
+    profit_mode = bool(policy.get("profit_mode", False))
+    if profit_mode:
+        data_collection_mode = False
+        try:
+            high_threshold = float(policy.get("profit_mode_high_threshold", 60.0))
+            confidence_threshold = float(policy.get("profit_mode_confidence_threshold", 55.0))
+            rr_threshold = float(policy.get("profit_mode_rr_threshold", 1.2))
+        except Exception:
+            high_threshold, confidence_threshold, rr_threshold = 60.0, 55.0, 1.2
+
     return {
         "enabled": enabled,
         "mode": mode,
@@ -40,6 +79,7 @@ def market_brain_execution_config() -> dict[str, Any]:
         "confidence_threshold": confidence_threshold,
         "rr_threshold": rr_threshold,
         "data_collection_mode": data_collection_mode,
+        "profit_mode": profit_mode,
     }
 
 

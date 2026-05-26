@@ -31,6 +31,32 @@ def _safe_float(v, default=0.0):
     except Exception:
         return default
 
+_STOP_DISTANCE_CACHE = None
+
+def _stop_distance_for(epic):
+    """Stop distance (in IG points) for an epic, from the risk policy.
+
+    Used to express profit/loss as an R-multiple (pnl_points / stop_distance)
+    so exit decisions are pair-correct instead of keyed off raw point counts
+    (e.g. +5 points is ~0.12R on a 40-point stop — pure noise, not a profit).
+    """
+    global _STOP_DISTANCE_CACHE
+    if _STOP_DISTANCE_CACHE is None:
+        try:
+            with open(os.path.join(BASE_DIR, "config", "ig_risk_policy.json"), "r") as f:
+                policy = json.load(f)
+            _STOP_DISTANCE_CACHE = policy.get("default_stop_distance_points", {}) or {}
+        except Exception:
+            _STOP_DISTANCE_CACHE = {}
+    dist = _safe_float(_STOP_DISTANCE_CACHE.get(epic), 0.0)
+    return dist if dist > 0 else 35.0
+
+def _r_multiple(pnl_points, epic):
+    risk = _stop_distance_for(epic)
+    if risk <= 0:
+        return 0.0
+    return _safe_float(pnl_points) / risk
+
 def _load_state():
     if not os.path.exists(STATE_PATH):
         return {"last_exit_by_epic": {}, "reduced_risk_mode": False, "profit_harvest_mode": False}
@@ -156,6 +182,7 @@ def evaluate_live_positions():
         reason = sig.get("reason", "No active signal")
         pct = _safe_float(p.get("percentage_change"))
         pnl_pts = _safe_float(p.get("pnl_points"))
+        r = _r_multiple(pnl_pts, p["epic"])
         direction = p["direction"]
         size = _safe_float(p["size"])
 
@@ -183,44 +210,44 @@ def evaluate_live_positions():
             why = "Position conflicts with current signal."
         elif aligned:
             if harvest_mode:
-                if pnl_pts > 8 and conf >= 78 and abs(pct) >= 0.12:
+                if r >= 1.5 and conf >= 78:
                     desired = "TAKE_PARTIAL"
-                    why = "Profit-harvest mode: trim winner and keep runner."
-                elif pnl_pts > 0:
-                    desired = "TAKE_PROFIT"
-                    why = "Profit-harvest mode: crystallize gain."
-                elif pnl_pts < -4:
+                    why = "Profit-harvest mode: trim proven winner (>=1.5R) and keep runner."
+                elif r >= 1.0:
+                    desired = "TAKE_PARTIAL"
+                    why = "Profit-harvest mode: bank partial after reaching 1R."
+                elif r <= -0.8:
                     desired = "CLOSE_NOW"
-                    why = "Profit-harvest mode: cut weak laggard."
+                    why = "Profit-harvest mode: cut laggard nearing stop."
                 else:
                     desired = "HOLD"
-                    why = "Profit-harvest mode: hold only if runner not proven yet."
+                    why = "Profit-harvest mode: hold to target until at least 1R."
             else:
-                if pnl_pts > 8 and conf >= 75 and abs(pct) >= 0.12:
+                if r >= 1.0 and conf >= 75:
                     desired = "HOLD"
-                    why = "Strong trend and profit still alive."
-                elif pnl_pts > 5 and conf >= 60 and abs(pct) >= 0.08:
+                    why = "Strong aligned trend past 1R — let the winner run to target."
+                elif r >= 1.0 and conf < 58:
                     desired = "TAKE_PARTIAL"
-                    why = "Good profit booked while keeping runner alive."
-                elif pnl_pts > 0 and conf < 58:
-                    desired = "TAKE_PROFIT"
-                    why = "Profit available but signal confidence is fading."
-                elif pnl_pts < -5 and conf < 55:
+                    why = "Up >=1R but signal confidence fading — bank partial, keep runner."
+                elif r >= 1.5:
+                    desired = "TAKE_PARTIAL"
+                    why = "Trade reached 1.5R — secure partial profit, trail the rest."
+                elif r <= -0.9 and conf < 55:
                     desired = "CLOSE_NOW"
-                    why = "Losing trade with weak signal."
+                    why = "Near stop with weak signal — exit before it hits the stop."
                 else:
                     desired = "HOLD"
-                    why = "Signal still aligned."
+                    why = "Signal still aligned and trade inside its working range — holding to target."
         else:
-            if pnl_pts > 0:
-                desired = "TAKE_PROFIT"
-                why = "No fresh aligned signal; lock profit."
-            elif pnl_pts < -12:
+            if r >= 1.2:
+                desired = "TAKE_PARTIAL"
+                why = "No fresh aligned signal but trade earned >=1.2R — bank a partial."
+            elif r <= -1.0:
                 desired = "CLOSE_NOW"
-                why = "No aligned signal and trade not working."
+                why = "No aligned signal and trade has run to its stop distance."
             else:
                 desired = "HOLD"
-                why = "No aligned signal but loss within tolerance; holding."
+                why = "No fresh signal but trade inside its working range — hold to TP/SL, don't scalp noise."
 
         managed.append({
             **p,

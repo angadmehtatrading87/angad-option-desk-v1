@@ -15,7 +15,7 @@ def get_exit_thresholds():
         "giveback_pct_after_0_75r": 0.35,
         "giveback_pct_after_1_25r": 0.25,
         "giveback_pct_after_2r": 0.15,
-        "minimum_hold_minutes_for_trim": 3,
+        "minimum_hold_minutes_for_trim": 45,
         "reentry_cooldown_minutes": 20,
     }
 

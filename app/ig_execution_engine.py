@@ -186,12 +186,18 @@ def _market_brain_allocation_multiplier(decision, sizing_plan, controls):
         return 1.2, "trend_expand"
     if score >= 65:
         return 1.0, "market_brain_passing_threshold"
-    # Allow trades whose score clears the (potentially lowered) env threshold.
+    # Allow trades whose score clears the effective entry threshold. Read the
+    # SAME source the bridge gate uses (profit_mode-aware) so a trade can never
+    # be approved at entry and then zeroed here for disagreeing thresholds.
     try:
-        env_high = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "65.0"))
+        from app.market_brain_execution_bridge import effective_high_threshold
+        eff_high = effective_high_threshold()
     except Exception:
-        env_high = 65.0
-    if score >= env_high:
+        try:
+            eff_high = float(os.getenv("MARKET_BRAIN_HIGH_THRESHOLD", "65.0"))
+        except Exception:
+            eff_high = 65.0
+    if score >= eff_high:
         return 0.75, "analysis_mode_reduced_size"
     # Market brain present but score too low — suppress.
     return 0.0, "weak_or_unclear_setup"

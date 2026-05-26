@@ -48,9 +48,24 @@ def apply_patch(patch: dict) -> tuple[bool, str]:
         return False, f"read error: {e}"
 
     if old_snippet and old_snippet != "NONE":
-        if old_snippet not in content:
-            return False, f"old_snippet not found in {filepath} (may already be patched or stale)"
-        new_content = content.replace(old_snippet, new_snippet, 1)
+        if old_snippet in content:
+            new_content = content.replace(old_snippet, new_snippet, 1)
+        else:
+            # Fallback: strip trailing whitespace per line and retry
+            def _norm(s: str) -> str:
+                return "\n".join(ln.rstrip() for ln in s.splitlines())
+            norm_old = _norm(old_snippet)
+            norm_content = _norm(content)
+            if norm_old not in norm_content:
+                return False, f"old_snippet not found in {filepath} (may already be patched or stale)"
+            # Splice by finding the byte range in the original content
+            idx = norm_content.find(norm_old)
+            lines_before = norm_content[:idx].count("\n")
+            snippet_line_count = norm_old.count("\n") + 1
+            orig_lines = content.splitlines(keepends=True)
+            start = sum(len(orig_lines[i]) for i in range(lines_before))
+            end = sum(len(orig_lines[i]) for i in range(lines_before + snippet_line_count))
+            new_content = content[:start] + new_snippet + ("\n" if not new_snippet.endswith("\n") else "") + content[end:]
     else:
         # Append to end of file
         new_content = content.rstrip("\n") + "\n\n" + new_snippet + "\n"
